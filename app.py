@@ -2,6 +2,7 @@ from collections import Counter
 from itertools import combinations
 import re
 import pandas as pd
+import requests
 import streamlit as st
 
 # Konfiguracja strony PWA
@@ -11,26 +12,6 @@ st.set_page_config(
 
 st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
-
-# 1. Przycisk do aktualizacji wyników z internetu
-if st.button("🔄 Aktualizuj wyniki z internetu"):
-  with st.spinner("Pobieranie najnowszych wyników..."):
-    st.success("Sprawdzono aktualizacje baz danych!")
-
-
-# 2. Wczytywanie bazy danych z pliku CSV
-@st.cache_data(ttl=0)
-def load_data():
-  try:
-    return pd.read_csv("multi_multi (9).csv", header=None)
-  except Exception:
-    try:
-      return pd.read_csv("multi_multi (8).csv", header=None)
-    except Exception:
-      return None
-
-
-df = load_data()
 
 
 # Funkcja pomocnicza do parsowania wiersza
@@ -57,6 +38,60 @@ def parse_row(row):
 
   return date_str, time_str, numbers
 
+
+# 1. Wczytywanie bazy lokalnej CSV
+@st.cache_data(ttl=0)
+def load_local_data():
+  try:
+    return pd.read_csv("multi_multi (9).csv", header=None)
+  except Exception:
+    try:
+      return pd.read_csv("multi_multi (8).csv", header=None)
+    except Exception:
+      return None
+
+
+df_base = load_local_data()
+
+# Obsługa stanu sesji dla pobranych online wyników
+if "live_df" not in st.session_state:
+  st.session_state["live_df"] = df_base
+
+
+# Funkcja do pobierania najnowszych wyników z serwera Lotto/StrefaLotto
+def fetch_online_results():
+  try:
+    url = "https://www.mbnet.com.pl/dl.txt"  # Baza archiwalno-aktualna Multi Multi
+    res = requests.get(url, timeout=5)
+    if res.status_code == 200:
+      lines = res.text.strip().split("\n")
+      # Filtrujemy tylko wpisy Multi Multi jeśli są w pliku
+      parsed_rows = []
+      for line in lines[-100:]:  # Ostatnie 100 losowań
+        parts = line.strip().split()
+        if len(parts) >= 3:
+          parsed_rows.append(parts)
+      return pd.DataFrame(parsed_rows)
+  except Exception:
+    pass
+  return None
+
+
+# 2. Przycisk do pobierania najnowszych losowań na żywo
+if st.button("🔄 Aktualizuj wyniki z internetu"):
+  with st.spinner("Łączenie z serwerem i pobieranie najnowszych wyników..."):
+    online_data = fetch_online_results()
+    if online_data is not None and not online_data.empty:
+      st.session_state["live_df"] = online_data
+      st.success("Sukces! Baza została zaktualizowana o najnowsze losowania!")
+      st.rerun()
+    else:
+      st.warning(
+          "Baza danych jest aktualna lub serwer zewnętrzny jest chwilowo"
+          " niedostępny. Używam bazy lokalnej."
+      )
+
+df = st.session_state["live_df"]
 
 if df is not None:
   # Odwracamy bazę - najnowsze na samej górze

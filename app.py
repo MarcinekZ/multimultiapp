@@ -61,28 +61,25 @@ if df is not None:
   # Odwracamy bazę - najnowsze na samej górze
   df_reversed = df.iloc[::-1].reset_index(drop=True)
 
-  # --- 4 OSTATNIE LOSOWANIA Z PODŚWIETLENIEM POWTÓREK ---
+  # --- 4 OSTATNIE LOSOWANIA I PRZESKOKI ---
   st.markdown("---")
-  st.markdown("### 📌 4 Ostatnie Losowania i Powtórki")
+  st.markdown("### 📌 4 Ostatnie Losowania (Przeskoki)")
 
   recent_draws = []
-  all_4_numbers = []
-
-  for idx, row in df_reversed.head(4).iterrows():
+  for idx, row in df_reversed.head(5).iterrows():
     d_str, t_str, nums = parse_row(row)
     if nums:
       num_draw = len(df_reversed) - idx
       recent_draws.append(
           {"num": num_draw, "date": d_str, "time": t_str, "numbers": nums}
       )
-      all_4_numbers.extend(nums)
 
-  # Liczymy powtórki w ostatnich 4 losowaniach
-  counts_4 = Counter(all_4_numbers)
-  repeats = {num: cnt for num, cnt in counts_4.items() if cnt > 1}
+  displayed_draws = recent_draws[:4]
+  latest_draw_nums = (
+      set(displayed_draws[0]["numbers"]) if displayed_draws else set()
+  )
 
-  # Wyświetlamy 4 ostatnie losowania
-  for draw in recent_draws:
+  for i, draw in enumerate(displayed_draws):
     header = f"**Losowanie #{draw['num']}**"
     if draw["date"]:
       header += f" | 📅 {draw['date']}"
@@ -91,22 +88,26 @@ if df is not None:
 
     st.markdown(header)
 
-    # Formatujemy liczby - dodajemy oznaczenie 🔥 dla liczb, które się powtórzyły
+    prev_nums = (
+        set(recent_draws[i + 1]["numbers"])
+        if (i + 1) < len(recent_draws)
+        else set()
+    )
+
     formatted_nums = []
     for n in draw["numbers"]:
-      if n in repeats:
-        formatted_nums.append(f"🔥{n}")
+      if n in prev_nums:
+        formatted_nums.append(f"🔄{n}")
       else:
         formatted_nums.append(n)
 
     mid = len(formatted_nums) // 2
     st.code(" ".join(formatted_nums[:mid]) + "\n" + " ".join(formatted_nums[mid:]))
 
-  # Podsumowanie powtórzonych liczb
-  if repeats:
-    st.info("🔥 **Liczby powtórzone w ostatnich 4 losowaniach:**\n\n" + ", ".join(
-        [f"**{num}** ({cnt}x)" for num, cnt in sorted(repeats.items(), key=lambda x: (-x[1], x[0]))]
-    ))
+  st.caption(
+      "Legenda: 🔄 - liczba powtórzona z bezpośrednio poprzedniego losowania"
+      " (przeskok)"
+  )
 
   # --- PANEL ANALITYCZNY I USTAWIENIA ---
   st.markdown("---")
@@ -156,7 +157,9 @@ if df is not None:
     st.markdown(f"🟢 **Top 10 Nieparzyste ({sesja})**")
     if top_odd:
       for num, count in top_odd:
-        st.write(f"• **{num:02d}** (trak: {count})")
+        num_str = f"{num:02d}"
+        hit_badge = " 🎯 **[Trafiona!]**" if num_str in latest_draw_nums else ""
+        st.write(f"• **{num_str}** (trak: {count}){hit_badge}")
     else:
       st.info("Brak danych")
 
@@ -164,42 +167,54 @@ if df is not None:
     st.markdown(f"🔵 **Top 10 Parzyste ({sesja})**")
     if top_even:
       for num, count in top_even:
-        st.write(f"• **{num:02d}** (trak: {count})")
+        num_str = f"{num:02d}"
+        hit_badge = " 🎯 **[Trafiona!]**" if num_str in latest_draw_nums else ""
+        st.write(f"• **{num_str}** (trak: {count}){hit_badge}")
     else:
       st.info("Brak danych")
 
-  # --- REKOMENDOWANE ZESTAWY (1 DO 10 LICZB) ---
+  # --- 4 REKOMENDOWANE ZESTAWY AI Z OSOBNYMI SUWAKAMI ---
   st.markdown("---")
-  st.markdown("### 💡 Rekomendowane Zestawy AI")
-
-  ile_liczb = st.slider(
-      "🎯 Wybierz ile liczb ma liczyć zestaw:",
-      min_value=1,
-      max_value=10,
-      value=5,
-  )
+  st.markdown("### 💡 Rekomendowane Zestawy AI (4 Zakłady)")
 
   if counter_all:
-    top_overall = [
-        f"{num:02d}" for num, _ in counter_all.most_common(ile_liczb)
-    ]
-
-    half = ile_liczb // 2
-    rem = ile_liczb - half
-    bal_odd = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(rem)]
-    bal_even = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(half)]
-    balanced_set = sorted(
-        bal_odd + bal_even, key=lambda x: int(x) if x.isdigit() else 0
+    # Zestaw 1: Gorący
+    st.markdown("#### 🔥 Zestaw 1: Gorący (Najczęstsze)")
+    n1 = st.slider(
+        "Liczba skreśleń w Zestawie 1:", min_value=1, max_value=10, value=5, key="s1"
     )
+    set1 = [f"{num:02d}" for num, _ in counter_all.most_common(n1)]
+    st.code(" ".join(set1))
 
-    col_z1, col_z2 = st.columns(2)
-    with col_z1:
-      st.success(f"🔥 **Zestaw Gorący ({ile_liczb} liczb):**")
-      st.code(" ".join(top_overall))
+    # Zestaw 2: Zbalansowany
+    st.markdown("#### ⚖️ Zestaw 2: Zbalansowany (Parzyste/Nieparzyste)")
+    n2 = st.slider(
+        "Liczba skreśleń w Zestawie 2:", min_value=1, max_value=10, value=5, key="s2"
+    )
+    h2 = n2 // 2
+    r2 = n2 - h2
+    b_odd = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(r2)]
+    b_even = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(h2)]
+    set2 = sorted(
+        b_odd + b_even, key=lambda x: int(x) if x.isdigit() else 0
+    )
+    st.code(" ".join(set2))
 
-    with col_z2:
-      st.info(f"⚖️ **Zestaw Zbalansowany ({ile_liczb} liczb):**")
-      st.code(" ".join(balanced_set))
+    # Zestaw 3: Tylko Parzyste
+    st.markdown("#### 🔵 Zestaw 3: Tylko Parzyste")
+    n3 = st.slider(
+        "Liczba skreśleń w Zestawie 3:", min_value=1, max_value=10, value=5, key="s3"
+    )
+    set3 = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(n3)]
+    st.code(" ".join(set3))
+
+    # Zestaw 4: Tylko Nieparzyste
+    st.markdown("#### 🟢 Zestaw 4: Tylko Nieparzyste")
+    n4 = st.slider(
+        "Liczba skreśleń w Zestawie 4:", min_value=1, max_value=10, value=5, key="s4"
+    )
+    set4 = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(n4)]
+    st.code(" ".join(set4))
 
   # --- ARCHIWUM ---
   st.markdown("---")

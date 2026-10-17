@@ -1,4 +1,5 @@
 from collections import Counter
+import re
 import pandas as pd
 import streamlit as st
 
@@ -30,59 +31,87 @@ def load_data():
 
 df = load_data()
 
-if df is not None:
-  # --- OSTATNIE DWA LOSOWANIA (14:00 i 22:00) ---
-  st.markdown("---")
-  st.markdown("### 📌 Ostatnie Losowania")
 
-  # Odwracamy bazę, aby najnowsze były na górze
-  df_reversed = df.iloc[::-1].reset_index(drop=True)
+# Funkcja pomocnicza do parsowania wiersza
+def parse_row(row):
+  items = [str(val).strip() for val in row if pd.notna(val)]
+  date_str = ""
+  time_str = ""
+  numbers = []
 
-  def extract_numbers(row):
-    nums = []
-    for val in row:
+  for item in items:
+    if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
+      date_str = item
+    elif "14" in item:
+      time_str = "14:00"
+    elif "22" in item or "21" in item:
+      time_str = "22:00"
+    else:
       try:
-        n = int(val)
+        n = int(item)
         if 1 <= n <= 80:
-          nums.append(f"{n:02d}")
+          numbers.append(f"{n:02d}")
       except ValueError:
         continue
-    return nums
 
-  row_14 = None
-  row_22 = None
+  return date_str, time_str, numbers
 
-  for _, row in df_reversed.iterrows():
-    row_str = " ".join(row.astype(str))
-    if "14" in row_str and row_14 is None:
-      row_14 = extract_numbers(row)
-    elif ("22" in row_str or "21" in row_str) and row_22 is None:
-      row_22 = extract_numbers(row)
 
-  if row_14 is None and len(df_reversed) > 0:
-    row_14 = extract_numbers(df_reversed.iloc[0])
-  if row_22 is None and len(df_reversed) > 1:
-    row_22 = extract_numbers(df_reversed.iloc[1])
+if df is not None:
+  # Odwracamy bazę - najnowsze na samej górze
+  df_reversed = df.iloc[::-1].reset_index(drop=True)
 
-  col_l14, col_l22 = st.columns(2)
-  with col_l14:
-    st.markdown("☀️ **Ostatnie 14:00:**")
-    if row_14:
-      st.write(" ".join(row_14))
-    else:
-      st.info("Brak danych")
+  # --- 4 OSTATNIE LOSOWANIA Z PODŚWIETLENIEM POWTÓREK ---
+  st.markdown("---")
+  st.markdown("### 📌 4 Ostatnie Losowania i Powtórki")
 
-  with col_l22:
-    st.markdown("🌙 **Ostatnie 22:00:**")
-    if row_22:
-      st.write(" ".join(row_22))
-    else:
-      st.info("Brak danych")
+  recent_draws = []
+  all_4_numbers = []
 
-  # --- PANEL ANALITYCZNY ---
+  for idx, row in df_reversed.head(4).iterrows():
+    d_str, t_str, nums = parse_row(row)
+    if nums:
+      num_draw = len(df_reversed) - idx
+      recent_draws.append(
+          {"num": num_draw, "date": d_str, "time": t_str, "numbers": nums}
+      )
+      all_4_numbers.extend(nums)
+
+  # Liczymy powtórki w ostatnich 4 losowaniach
+  counts_4 = Counter(all_4_numbers)
+  repeats = {num: cnt for num, cnt in counts_4.items() if cnt > 1}
+
+  # Wyświetlamy 4 ostatnie losowania
+  for draw in recent_draws:
+    header = f"**Losowanie #{draw['num']}**"
+    if draw["date"]:
+      header += f" | 📅 {draw['date']}"
+    if draw["time"]:
+      header += f" | ⏱️ {draw['time']}"
+
+    st.markdown(header)
+
+    # Formatujemy liczby - dodajemy oznaczenie 🔥 dla liczb, które się powtórzyły
+    formatted_nums = []
+    for n in draw["numbers"]:
+      if n in repeats:
+        formatted_nums.append(f"🔥{n}")
+      else:
+        formatted_nums.append(n)
+
+    mid = len(formatted_nums) // 2
+    st.code(" ".join(formatted_nums[:mid]) + "\n" + " ".join(formatted_nums[mid:]))
+
+  # Podsumowanie powtórzonych liczb
+  if repeats:
+    st.info("🔥 **Liczby powtórzone w ostatnich 4 losowaniach:**\n\n" + ", ".join(
+        [f"**{num}** ({cnt}x)" for num, cnt in sorted(repeats.items(), key=lambda x: (-x[1], x[0]))]
+    ))
+
+  # --- PANEL ANALITYCZNY I USTAWIENIA ---
   st.markdown("---")
   sesja = st.radio(
-      "⏱️ Wybierz Sesję do Analizy Top 10:", ["14:00", "22:00"], horizontal=True
+      "⏱️ Wybierz Sesję do Analizy:", ["14:00", "22:00"], horizontal=True
   )
 
   okres = st.slider(
@@ -92,7 +121,7 @@ if df is not None:
       value=50,
   )
 
-  # Filtrowanie dla analizy
+  # Filtrowanie danych do analizy
   df_filtered = df.copy()
   matched = False
   for col in df.columns:
@@ -111,14 +140,11 @@ if df is not None:
 
   all_numbers = []
   for _, row in df_subset.iterrows():
-    for val in row:
-      try:
-        num = int(val)
-        if 1 <= num <= 80:
-          all_numbers.append(num)
-      except ValueError:
-        continue
+    _, _, nums = parse_row(row)
+    for n_str in nums:
+      all_numbers.append(int(n_str))
 
+  counter_all = Counter(all_numbers)
   odd_nums = [n for n in all_numbers if n % 2 != 0]
   even_nums = [n for n in all_numbers if n % 2 == 0]
 
@@ -142,21 +168,57 @@ if df is not None:
     else:
       st.info("Brak danych")
 
-  # --- ARCHIWUM (OD NAJNOWSZYCH DO NAJSTARSZYCH) ---
+  # --- REKOMENDOWANE ZESTAWY (1 DO 10 LICZB) ---
+  st.markdown("---")
+  st.markdown("### 💡 Rekomendowane Zestawy AI")
+
+  ile_liczb = st.slider(
+      "🎯 Wybierz ile liczb ma liczyć zestaw:",
+      min_value=1,
+      max_value=10,
+      value=5,
+  )
+
+  if counter_all:
+    top_overall = [
+        f"{num:02d}" for num, _ in counter_all.most_common(ile_liczb)
+    ]
+
+    half = ile_liczb // 2
+    rem = ile_liczb - half
+    bal_odd = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(rem)]
+    bal_even = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(half)]
+    balanced_set = sorted(
+        bal_odd + bal_even, key=lambda x: int(x) if x.isdigit() else 0
+    )
+
+    col_z1, col_z2 = st.columns(2)
+    with col_z1:
+      st.success(f"🔥 **Zestaw Gorący ({ile_liczb} liczb):**")
+      st.code(" ".join(top_overall))
+
+    with col_z2:
+      st.info(f"⚖️ **Zestaw Zbalansowany ({ile_liczb} liczb):**")
+      st.code(" ".join(balanced_set))
+
+  # --- ARCHIWUM ---
   st.markdown("---")
   with st.expander("📂 Archiwum: Przeglądaj wszystkie losowania"):
     st.markdown("### Baza wyników (od najnowszych)")
 
-    formatted_archive = []
-    for idx, row in df_reversed.iterrows():
-      nums = extract_numbers(row)
+    for idx, row in df_reversed.head(50).iterrows():
+      d_str, t_str, nums = parse_row(row)
       if nums:
-        formatted_archive.append(
-            {"Losowanie": f"#{len(df_reversed)-idx}", "Liczby": " ".join(nums)}
-        )
+        num_draw = len(df_reversed) - idx
+        info_line = f"**Losowanie #{num_draw}**"
+        if d_str:
+          info_line += f" | 📅 {d_str}"
+        if t_str:
+          info_line += f" | ⏱️ {t_str}"
 
-    df_archive_show = pd.DataFrame(formatted_archive)
-    st.dataframe(df_archive_show, use_container_width=True, hide_index=True)
+        st.markdown(info_line)
+        mid = len(nums) // 2
+        st.code(" ".join(nums[:mid]) + "\n" + " ".join(nums[mid:]))
 
 else:
   st.error(

@@ -1,4 +1,5 @@
 from collections import Counter
+from itertools import combinations
 import re
 import pandas as pd
 import streamlit as st
@@ -140,10 +141,15 @@ if df is not None:
   df_subset = df_filtered.tail(okres)
 
   all_numbers = []
+  pair_counter = Counter()
+
   for _, row in df_subset.iterrows():
     _, _, nums = parse_row(row)
+    int_nums = sorted([int(n) for n in nums])
     for n_str in nums:
       all_numbers.append(int(n_str))
+    for p in combinations(int_nums, 2):
+      pair_counter[p] += 1
 
   counter_all = Counter(all_numbers)
   odd_nums = [n for n in all_numbers if n % 2 != 0]
@@ -151,6 +157,7 @@ if df is not None:
 
   top_odd = Counter(odd_nums).most_common(10)
   top_even = Counter(even_nums).most_common(10)
+  top_pairs = pair_counter.most_common(5)
 
   col1, col2 = st.columns(2)
   with col1:
@@ -173,47 +180,103 @@ if df is not None:
     else:
       st.info("Brak danych")
 
-  # --- 4 REKOMENDOWANE ZESTAWY AI Z OSOBNYMI SUWAKAMI ---
+  # --- ANALIZA WSPÓŁWYSTĘPOWANIA PAR ---
   st.markdown("---")
-  st.markdown("### 💡 Rekomendowane Zestawy AI (4 Zakłady)")
+  st.markdown(f"🔗 **Top 5 Najczęstszych Par Liczb ({sesja})**")
+  if top_pairs:
+    for (n1, n2), cnt in top_pairs:
+      st.write(f"• Para **{n1:02d}** i **{n2:02d}** (wspólnie w {cnt} losowaniach)")
+  else:
+    st.info("Brak danych dla par")
+
+
+  # --- INTELIGENTNY GENERATOR KOMPATYBILNYCH ZESTAWÓW AI ---
+  def generate_synergy_set(n_count, cnt_all, p_counter, filter_type="all"):
+    if not cnt_all:
+      return []
+
+    # Wybór puli startowej w zależności od typu zakładu
+    if filter_type == "even":
+      valid_pool = [num for num, _ in cnt_all.most_common(80) if num % 2 == 0]
+    elif filter_type == "odd":
+      valid_pool = [num for num, _ in cnt_all.most_common(80) if num % 2 != 0]
+    else:
+      valid_pool = [num for num, _ in cnt_all.most_common(80)]
+
+    if not valid_pool:
+      return []
+
+    # Zaczynamy od numeru o najwyższej częstotliwości indywidualnej
+    best_start = valid_pool[0]
+    selected = [best_start]
+
+    # Dobieramy kolejne liczby tak, aby miały największą synergiczną parę z już wybranymi
+    while len(selected) < n_count and len(selected) < len(valid_pool):
+      best_cand = None
+      max_score = -1
+
+      candidates = [num for num in valid_pool if num not in selected]
+      for cand in candidates:
+        # Suma współwystąpień z aktualnie wybranymi w zestawie
+        co_score = sum(
+            p_counter.get(tuple(sorted((cand, s))), 0) for s in selected
+        )
+        # Wynik = siła powiązań w parach (waga 3x) + częstotliwość ogólna
+        score = co_score * 3 + cnt_all[cand]
+        if score > max_score:
+          max_score = score
+          best_cand = cand
+
+      if best_cand is not None:
+        selected.append(best_cand)
+      else:
+        break
+
+    return sorted([f"{num:02d}" for num in selected], key=lambda x: int(x))
+
+
+  st.markdown("---")
+  st.markdown(
+      "### 💡 Rekomendowane Zestawy AI (Kompatybilne i Współwystępujące)"
+  )
 
   if counter_all:
-    # Zestaw 1: Gorący
-    st.markdown("#### 🔥 Zestaw 1: Gorący (Najczęstsze)")
+    # Zestaw 1: Inteligentny Gorący (Analiza współwystępowania par)
+    st.markdown("#### 🔥 Zestaw 1: Gorący (Synergia par)")
     n1 = st.slider(
         "Liczba skreśleń w Zestawie 1:", min_value=1, max_value=10, value=5, key="s1"
     )
-    set1 = [f"{num:02d}" for num, _ in counter_all.most_common(n1)]
+    set1 = generate_synergy_set(n1, counter_all, pair_counter, "all")
     st.code(" ".join(set1))
 
-    # Zestaw 2: Zbalansowany
+    # Zestaw 2: Zbalansowany (Pół na pół parzyste/nieparzyste z synergią)
     st.markdown("#### ⚖️ Zestaw 2: Zbalansowany (Parzyste/Nieparzyste)")
     n2 = st.slider(
         "Liczba skreśleń w Zestawie 2:", min_value=1, max_value=10, value=5, key="s2"
     )
     h2 = n2 // 2
     r2 = n2 - h2
-    b_odd = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(r2)]
-    b_even = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(h2)]
+    bal_odd = generate_synergy_set(r2, counter_all, pair_counter, "odd")
+    bal_even = generate_synergy_set(h2, counter_all, pair_counter, "even")
     set2 = sorted(
-        b_odd + b_even, key=lambda x: int(x) if x.isdigit() else 0
+        bal_odd + bal_even, key=lambda x: int(x) if x.isdigit() else 0
     )
     st.code(" ".join(set2))
 
-    # Zestaw 3: Tylko Parzyste
-    st.markdown("#### 🔵 Zestaw 3: Tylko Parzyste")
+    # Zestaw 3: Tylko Parzyste (Synergia parzystych)
+    st.markdown("#### 🔵 Zestaw 3: Tylko Parzyste (Synergia)")
     n3 = st.slider(
         "Liczba skreśleń w Zestawie 3:", min_value=1, max_value=10, value=5, key="s3"
     )
-    set3 = [f"{num:02d}" for num, _ in Counter(even_nums).most_common(n3)]
+    set3 = generate_synergy_set(n3, counter_all, pair_counter, "even")
     st.code(" ".join(set3))
 
-    # Zestaw 4: Tylko Nieparzyste
-    st.markdown("#### 🟢 Zestaw 4: Tylko Nieparzyste")
+    # Zestaw 4: Tylko Nieparzyste (Synergia nieparzystych)
+    st.markdown("#### 🟢 Zestaw 4: Tylko Nieparzyste (Synergia)")
     n4 = st.slider(
         "Liczba skreśleń w Zestawie 4:", min_value=1, max_value=10, value=5, key="s4"
     )
-    set4 = [f"{num:02d}" for num, _ in Counter(odd_nums).most_common(n4)]
+    set4 = generate_synergy_set(n4, counter_all, pair_counter, "odd")
     st.code(" ".join(set4))
 
   # --- ARCHIWUM ---

@@ -141,7 +141,7 @@ if df is not None:
 
   df_subset = df_filtered.tail(okres)
 
-  # Najpierw musimy wyliczyć Top 10 dla wybranego okresu, aby wiedzieć, co sprawdzać
+  # Wyznaczanie Top 10 dla wybranego okresu
   all_numbers_temp = []
   for _, row in df_subset.iterrows():
     _, _, nums = parse_row(row)
@@ -154,8 +154,9 @@ if df is not None:
   top_odd_set = {num for num, _ in Counter(odd_temp).most_common(10)}
   top_even_set = {num for num, _ in Counter(even_temp).most_common(10)}
 
-  # Zbieranie danych do wykresu i tabeli trafień Top 10
-  chart_data = []
+  # Zbieranie danych do dwóch osobnych wykresów
+  even_chart_data = []
+  odd_chart_data = []
   table_details = []
   all_numbers = []
   pair_counter = Counter()
@@ -165,22 +166,16 @@ if df is not None:
     if nums:
       int_nums = sorted([int(n) for n in nums])
 
-      # Ile liczb z Top 10 trafiło się w tym losowaniu?
       hits_even = sum(1 for n in int_nums if n in top_even_set)
       hits_odd = sum(1 for n in int_nums if n in top_odd_set)
 
-      chart_data.append({
-          "Trafione Top 10 Parzyste": hits_even,
-          "Trafione Top 10 Nieparzyste": hits_odd,
-      })
+      even_chart_data.append({"Trafienia Parzyste Top 10": hits_even})
+      odd_chart_data.append({"Trafienia Nieparzyste Top 10": hits_odd})
+
       table_details.append({
           "Data": f"{d_str} {t_str}".strip(),
-          "Trafione Top 10 Parzyste": hits_even,
-          "Trafione Top 10 Nieparzyste": hits_odd,
-          "Wszystkie Parzyste w losowaniu": sum(1 for n in int_nums if n % 2 == 0),
-          "Wszystkie Nieparzyste w losowaniu": sum(
-              1 for n in int_nums if n % 2 != 0
-          ),
+          "Trafione Parzyste Top 10": hits_even,
+          "Trafione Nieparzyste Top 10": hits_odd,
       })
 
       for n_str in nums:
@@ -188,17 +183,17 @@ if df is not None:
       for p in combinations(int_nums, 2):
         pair_counter[p] += 1
 
-  # Wykres trafień Top 10 parzystych i nieparzystych
-  if chart_data:
-    st.markdown(
-        "📈 **Wykres skuteczności trafień Top 10 (Parzyste vs Nieparzyste w"
-        " poszczególnych losowaniach):**"
-    )
-    df_chart = pd.DataFrame(chart_data)
-    st.bar_chart(df_chart)
+  # DWA OSOBNE WYKRESY CZYTELNE NA TELEFONIE
+  if even_chart_data and odd_chart_data:
+    st.markdown("---")
+    st.markdown("📈 **Wykres 1: Skuteczność Top 10 Parzyste**")
+    st.bar_chart(pd.DataFrame(even_chart_data))
+
+    st.markdown("📈 **Wykres 2: Skuteczność Top 10 Nieparzyste**")
+    st.bar_chart(pd.DataFrame(odd_chart_data))
 
     with st.expander(
-        "📋 Zobacz dokładną ilość trafionych liczb z Top 10 w każdym losowaniu"
+        "📋 Zobacz dokładną ilość trafień w poszczególnych losowaniach"
     ):
       df_table = pd.DataFrame(table_details).iloc[::-1].reset_index(drop=True)
       st.dataframe(df_table, use_container_width=True, hide_index=True)

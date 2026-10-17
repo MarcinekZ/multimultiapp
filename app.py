@@ -110,7 +110,7 @@ if df is not None:
       " (przeskok)"
   )
 
-  # --- PANEL ANALITYCZNY I USTAWIENIA ---
+  # --- PANEL ANALITYCZNY I SUWAK ---
   st.markdown("---")
   sesja = st.radio(
       "⏱️ Wybierz Sesję do Analizy:", ["14:00", "22:00"], horizontal=True
@@ -118,9 +118,10 @@ if df is not None:
 
   okres = st.slider(
       "📊 Okres analizy (liczba ostatnich sesji):",
-      min_value=10,
-      max_value=200,
+      min_value=5,
+      max_value=500,
       value=50,
+      step=5,
   )
 
   # Filtrowanie danych do analizy
@@ -140,23 +141,71 @@ if df is not None:
 
   df_subset = df_filtered.tail(okres)
 
+  # Najpierw musimy wyliczyć Top 10 dla wybranego okresu, aby wiedzieć, co sprawdzać
+  all_numbers_temp = []
+  for _, row in df_subset.iterrows():
+    _, _, nums = parse_row(row)
+    for n_str in nums:
+      all_numbers_temp.append(int(n_str))
+
+  odd_temp = [n for n in all_numbers_temp if n % 2 != 0]
+  even_temp = [n for n in all_numbers_temp if n % 2 == 0]
+
+  top_odd_set = {num for num, _ in Counter(odd_temp).most_common(10)}
+  top_even_set = {num for num, _ in Counter(even_temp).most_common(10)}
+
+  # Zbieranie danych do wykresu i tabeli trafień Top 10
+  chart_data = []
+  table_details = []
   all_numbers = []
   pair_counter = Counter()
 
-  for _, row in df_subset.iterrows():
-    _, _, nums = parse_row(row)
-    int_nums = sorted([int(n) for n in nums])
-    for n_str in nums:
-      all_numbers.append(int(n_str))
-    for p in combinations(int_nums, 2):
-      pair_counter[p] += 1
+  for idx, row in df_subset.iterrows():
+    d_str, t_str, nums = parse_row(row)
+    if nums:
+      int_nums = sorted([int(n) for n in nums])
+
+      # Ile liczb z Top 10 trafiło się w tym losowaniu?
+      hits_even = sum(1 for n in int_nums if n in top_even_set)
+      hits_odd = sum(1 for n in int_nums if n in top_odd_set)
+
+      chart_data.append({
+          "Trafione Top 10 Parzyste": hits_even,
+          "Trafione Top 10 Nieparzyste": hits_odd,
+      })
+      table_details.append({
+          "Data": f"{d_str} {t_str}".strip(),
+          "Trafione Top 10 Parzyste": hits_even,
+          "Trafione Top 10 Nieparzyste": hits_odd,
+          "Wszystkie Parzyste w losowaniu": sum(1 for n in int_nums if n % 2 == 0),
+          "Wszystkie Nieparzyste w losowaniu": sum(
+              1 for n in int_nums if n % 2 != 0
+          ),
+      })
+
+      for n_str in nums:
+        all_numbers.append(int(n_str))
+      for p in combinations(int_nums, 2):
+        pair_counter[p] += 1
+
+  # Wykres trafień Top 10 parzystych i nieparzystych
+  if chart_data:
+    st.markdown(
+        "📈 **Wykres skuteczności trafień Top 10 (Parzyste vs Nieparzyste w"
+        " poszczególnych losowaniach):**"
+    )
+    df_chart = pd.DataFrame(chart_data)
+    st.bar_chart(df_chart)
+
+    with st.expander(
+        "📋 Zobacz dokładną ilość trafionych liczb z Top 10 w każdym losowaniu"
+    ):
+      df_table = pd.DataFrame(table_details).iloc[::-1].reset_index(drop=True)
+      st.dataframe(df_table, use_container_width=True, hide_index=True)
 
   counter_all = Counter(all_numbers)
-  odd_nums = [n for n in all_numbers if n % 2 != 0]
-  even_nums = [n for n in all_numbers if n % 2 == 0]
-
-  top_odd = Counter(odd_nums).most_common(10)
-  top_even = Counter(even_nums).most_common(10)
+  top_odd = Counter(odd_temp).most_common(10)
+  top_even = Counter(even_temp).most_common(10)
   top_pairs = pair_counter.most_common(5)
 
   col1, col2 = st.columns(2)
@@ -195,7 +244,6 @@ if df is not None:
     if not cnt_all:
       return []
 
-    # Wybór puli startowej w zależności od typu zakładu
     if filter_type == "even":
       valid_pool = [num for num, _ in cnt_all.most_common(80) if num % 2 == 0]
     elif filter_type == "odd":
@@ -206,22 +254,18 @@ if df is not None:
     if not valid_pool:
       return []
 
-    # Zaczynamy od numeru o najwyższej częstotliwości indywidualnej
     best_start = valid_pool[0]
     selected = [best_start]
 
-    # Dobieramy kolejne liczby tak, aby miały największą synergiczną parę z już wybranymi
     while len(selected) < n_count and len(selected) < len(valid_pool):
       best_cand = None
       max_score = -1
 
       candidates = [num for num in valid_pool if num not in selected]
       for cand in candidates:
-        # Suma współwystąpień z aktualnie wybranymi w zestawie
         co_score = sum(
             p_counter.get(tuple(sorted((cand, s))), 0) for s in selected
         )
-        # Wynik = siła powiązań w parach (waga 3x) + częstotliwość ogólna
         score = co_score * 3 + cnt_all[cand]
         if score > max_score:
           max_score = score
@@ -241,7 +285,6 @@ if df is not None:
   )
 
   if counter_all:
-    # Zestaw 1: Inteligentny Gorący (Analiza współwystępowania par)
     st.markdown("#### 🔥 Zestaw 1: Gorący (Synergia par)")
     n1 = st.slider(
         "Liczba skreśleń w Zestawie 1:", min_value=1, max_value=10, value=5, key="s1"
@@ -249,7 +292,6 @@ if df is not None:
     set1 = generate_synergy_set(n1, counter_all, pair_counter, "all")
     st.code(" ".join(set1))
 
-    # Zestaw 2: Zbalansowany (Pół na pół parzyste/nieparzyste z synergią)
     st.markdown("#### ⚖️ Zestaw 2: Zbalansowany (Parzyste/Nieparzyste)")
     n2 = st.slider(
         "Liczba skreśleń w Zestawie 2:", min_value=1, max_value=10, value=5, key="s2"
@@ -263,7 +305,6 @@ if df is not None:
     )
     st.code(" ".join(set2))
 
-    # Zestaw 3: Tylko Parzyste (Synergia parzystych)
     st.markdown("#### 🔵 Zestaw 3: Tylko Parzyste (Synergia)")
     n3 = st.slider(
         "Liczba skreśleń w Zestawie 3:", min_value=1, max_value=10, value=5, key="s3"
@@ -271,7 +312,6 @@ if df is not None:
     set3 = generate_synergy_set(n3, counter_all, pair_counter, "even")
     st.code(" ".join(set3))
 
-    # Zestaw 4: Tylko Nieparzyste (Synergia nieparzystych)
     st.markdown("#### 🟢 Zestaw 4: Tylko Nieparzyste (Synergia)")
     n4 = st.slider(
         "Liczba skreśleń w Zestawie 4:", min_value=1, max_value=10, value=5, key="s4"

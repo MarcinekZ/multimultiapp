@@ -2,6 +2,7 @@ from collections import Counter
 from itertools import combinations
 import re
 import pandas as pd
+import requests
 import streamlit as st
 
 # Konfiguracja strony PWA
@@ -12,7 +13,57 @@ st.set_page_config(
 st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
-# 1. Wczytywanie bazy lokalnej CSV
+
+# 1. Automatyczny pobieracz wyników z otwartego źródła tekstowego w tle
+@st.cache_data(ttl=600)  # Odświeża automatycznie co 10 minut
+def fetch_live_data():
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      )
+  }
+  url = "https://www.mbnet.com.pl/dl.txt"
+  try:
+    response = requests.get(url, headers=headers, timeout=8)
+    if response.status_code == 200:
+      lines = response.text.strip().split("\n")
+      rows = []
+      for line in lines:
+        # Wyciągamy wszystkie liczby z linijki
+        tokens = line.strip().split()
+        if len(tokens) >= 20:
+          # Szukamy daty, godziny i liczb
+          date_found = ""
+          time_found = "14:00"
+          numbers = []
+          for token in tokens:
+            if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", token):
+              date_found = token
+            elif "22" in token or "21" in token:
+              time_found = "22:00"
+            else:
+              try:
+                val = int(token)
+                if 1 <= val <= 80:
+                  numbers.append(f"{val:02d}")
+              except ValueError:
+                continue
+          if len(numbers) >= 20:
+            row = (
+                [date_found, time_found] + numbers[:20]
+                if date_found
+                else numbers[:20]
+            )
+            rows.append(row)
+      if rows:
+        return pd.DataFrame(rows)
+  except Exception:
+    pass
+  return None
+
+
+# Awaryjne wczytywanie lokalnego CSV
 @st.cache_data(ttl=0)
 def load_local_data():
   try:
@@ -24,58 +75,57 @@ def load_local_data():
       return None
 
 
-df_base = load_local_data()
-
-# Zarządzaniestanem sesji (pamięć podręczna aplikacji w telefonie/przeglądarce)
+# Inicjalizacja bazy danych (próba pobrania online, jak nie to lokalna)
 if "live_df" not in st.session_state:
-  st.session_state["live_df"] = df_base
+  live_data = fetch_live_data()
+  if live_data is not None and not live_data.empty:
+    st.session_state["live_df"] = live_data
+  else:
+    st.session_state["live_df"] = load_local_data()
 
-# --- PANEL SZYBKIEJ AKTUALIZACJI Z TELEFONU ---
-with st.expander("⚡ Dodaj najnowsze losowanie (Błyskawiczna aktualizacja)"):
-  st.markdown(
-      "Wpisz datę, godzinę oraz 20 wylosowanych liczb (oddzielonych spacjami)."
-  )
-  col_d, col_t = st.columns(2)
-  with col_d:
-    input_date = st.text_input("Data (np. 18.10.2026)", value="18.10.2026")
-  with col_t:
-    input_time = st.selectbox("Sesja", ["14:00", "22:00"])
-
-  input_nums_str = st.text_area(
-      "Wklej 20 liczb (np. 01 05 12 19 ... 80):",
-      placeholder="01 05 12 18 22 25 31 35 40 44 48 52 55 60 63 68 71 75 78 80",
-  )
-
-  if st.button("🚀 Dodaj i przelicz system"):
-    if input_nums_str:
-      # Czyszczenie i wyciąganie liczb
-      found_nums = [
-          f"{int(n):02d}"
-          for n in re.findall(r"\d+", input_nums_str)
-          if 1 <= int(n) <= 80
-      ]
-      if len(found_nums) >= 1:
-        new_row = [input_date, input_time] + found_nums[:20]
-        # Tworzymy nowy wiersz jako DataFrame i doklejamy na początek
-        new_df = pd.DataFrame([new_row])
-        st.session_state["live_df"] = pd.concat(
-            [st.session_state["live_df"], new_df], ignore_index=True
-        )
-        st.success(
-            "✅ Pomyślnie dodano nowe losowanie! Analityka została"
-            " zaktualizowana."
-        )
-        st.rerun()
-      else:
-        st.error(
-            "⚠️ Podano za mało poprawnych liczb z zakresu 1-80. Wpisz liczby"
-            " poprawnie."
-        )
+# Przycisk ręcznego odświeżenia w tle
+if st.button("🔄 Pobierz najnowsze wyniki z sieci"):
+  with st.spinner("Pobieranie aktualizacji..."):
+    new_data = fetch_live_data()
+    if new_data is not None and not new_data.empty:
+      st.session_state["live_df"] = new_data
+      st.success("✅ Pomyślnie zaktualizowano bazę najnowszych losowań!")
+      st.rerun()
+    else:
+      st.warning(
+          "⚠️ Korzystam z zapisanej bazy analitycznej (serwer tymczasowo"
+          " niedostępny)."
+      )
 
 df = st.session_state["live_df"]
 
+
+# Funkcja pomocnicza do parsowania wiersza
+def parse_row(row):
+  items = [str(val).strip() for val in row if pd.notna(val)]
+  date_str = ""
+  time_str = ""
+  numbers = []
+
+  for item in items:
+    if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
+      date_str = item
+    elif "14" in item:
+      time_str = "14:00"
+    elif "22" in item or "21" in item:
+      time_str = "22:00"
+    else:
+      try:
+        n = int(item)
+        if 1 <= n <= 80:
+          numbers.append(f"{n:02d}")
+      except ValueError:
+        continue
+
+  return date_str, time_str, numbers
+
+
 if df is not None:
-  # Odwracamy bazę - najnowsze na samej górze
   df_reversed = df.iloc[::-1].reset_index(drop=True)
 
   # --- 4 OSTATNIE LOSOWANIA I PRZESKOKI ---
@@ -84,24 +134,7 @@ if df is not None:
 
   recent_draws = []
   for idx, row in df_reversed.head(5).iterrows():
-    # Funkcja pomocnicza do parsowania wiersza
-    items = [str(val).strip() for val in row if pd.notna(val)]
-    d_str, t_str, nums = "", "", []
-    for item in items:
-      if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
-        d_str = item
-      elif "14" in item:
-        t_str = "14:00"
-      elif "22" in item or "21" in item:
-        t_str = "22:00"
-      else:
-        try:
-          n = int(item)
-          if 1 <= n <= 80:
-            nums.append(f"{n:02d}")
-        except ValueError:
-          continue
-
+    d_str, t_str, nums = parse_row(row)
     if nums:
       num_draw = len(df_reversed) - idx
       recent_draws.append(
@@ -157,7 +190,6 @@ if df is not None:
       step=5,
   )
 
-  # Filtrowanie danych do analizy
   df_filtered = df.copy()
   matched = False
   for col in df.columns:
@@ -174,29 +206,9 @@ if df is not None:
 
   df_subset = df_filtered.tail(okres)
 
-  # Parsor wierszy dla statystyk
-  def parse_row_full(row):
-    items = [str(val).strip() for val in row if pd.notna(val)]
-    d_str, t_str, numbers = "", "", []
-    for item in items:
-      if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
-        d_str = item
-      elif "14" in item:
-        t_str = "14:00"
-      elif "22" in item or "21" in item:
-        t_str = "22:00"
-      else:
-        try:
-          n = int(item)
-          if 1 <= n <= 80:
-            numbers.append(f"{n:02d}")
-        except ValueError:
-          continue
-    return d_str, t_str, numbers
-
   all_numbers_temp = []
   for _, row in df_subset.iterrows():
-    _, _, nums = parse_row_full(row)
+    _, _, nums = parse_row(row)
     for n_str in nums:
       all_numbers_temp.append(int(n_str))
 
@@ -213,7 +225,7 @@ if df is not None:
   pair_counter = Counter()
 
   for idx, row in df_subset.iterrows():
-    d_str, t_str, nums = parse_row_full(row)
+    d_str, t_str, nums = parse_row(row)
     if nums:
       int_nums = sorted([int(n) for n in nums])
 
@@ -370,7 +382,7 @@ if df is not None:
     st.markdown("### Baza wyników (od najnowszych)")
 
     for idx, row in df_reversed.head(50).iterrows():
-      d_str, t_str, nums = parse_row_full(row)
+      d_str, t_str, nums = parse_row(row)
       if nums:
         num_draw = len(df_reversed) - idx
         info_line = f"**Losowanie #{num_draw}**"

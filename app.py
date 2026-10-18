@@ -14,7 +14,7 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 
-# Funkcja pomocnicza do parsowania wiersza
+# Funkcja pomocnicza do parsowania wiersza z bazy lub sieci
 def parse_row(row):
   items = [str(val).strip() for val in row if pd.notna(val)]
   date_str = ""
@@ -39,7 +39,7 @@ def parse_row(row):
   return date_str, time_str, numbers
 
 
-# 1. Wczytywanie bazy lokalnej CSV
+# 1. Wczytywanie bazy lokalnej CSV z repozytorium
 @st.cache_data(ttl=0)
 def load_local_data():
   try:
@@ -58,37 +58,70 @@ if "live_df" not in st.session_state:
   st.session_state["live_df"] = df_base
 
 
-# Funkcja do pobierania najnowszych wyników z serwera Lotto/StrefaLotto
+# Niezawodna funkcja do pobierania losowań z sieci
 def fetch_online_results():
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/115.0.0.0 Safari/537.36"
+      )
+  }
+  urls = [
+      "https://www.mbnet.com.pl/dl.txt",
+      "https://www.lotto.pl/api/lotteries/draw-results/by-gametype?gameType=MultiMulti&size=50",
+  ]
+
+  # Próba pobrania z pierwszego pliku archiwalnego
   try:
-    url = "https://www.mbnet.com.pl/dl.txt"  # Baza archiwalno-aktualna Multi Multi
-    res = requests.get(url, timeout=5)
-    if res.status_code == 200:
+    res = requests.get(urls[0], headers=headers, timeout=8)
+    if res.status_code == 200 and len(res.text) > 100:
       lines = res.text.strip().split("\n")
-      # Filtrujemy tylko wpisy Multi Multi jeśli są w pliku
       parsed_rows = []
-      for line in lines[-100:]:  # Ostatnie 100 losowań
+      for line in lines:
         parts = line.strip().split()
         if len(parts) >= 3:
           parsed_rows.append(parts)
-      return pd.DataFrame(parsed_rows)
+      if len(parsed_rows) > 10:
+        return pd.DataFrame(parsed_rows)
   except Exception:
     pass
+
+  # Próba alternatywna (API Lotto)
+  try:
+    res = requests.get(urls[1], headers=headers, timeout=8)
+    if res.status_code == 200:
+      data = res.json()
+      items = data.get("items", [])
+      parsed_rows = []
+      for draw in items:
+        date_raw = draw.get("drawDate", "")[:10]
+        # Wyciągamy godziny / numery
+        results = draw.get("results", [])
+        if results:
+          nums = [f"{int(x):02d}" for x in results[0].get("resultsJson", [])]
+          time_code = "14:00" if "14:" in draw.get("drawDate", "") else "22:00"
+          row = [date_raw, time_code] + nums
+          parsed_rows.append(row)
+      if parsed_rows:
+        return pd.DataFrame(parsed_rows)
+  except Exception:
+    pass
+
   return None
 
 
-# 2. Przycisk do pobierania najnowszych losowań na żywo
+# 2. Przycisk do aktualizacji wyników w czasie rzeczywistym
 if st.button("🔄 Aktualizuj wyniki z internetu"):
-  with st.spinner("Łączenie z serwerem i pobieranie najnowszych wyników..."):
+  with st.spinner("Łączenie z serwerami wyników Lotto..."):
     online_data = fetch_online_results()
     if online_data is not None and not online_data.empty:
       st.session_state["live_df"] = online_data
-      st.success("Sukces! Baza została zaktualizowana o najnowsze losowania!")
+      st.success("Sukces! Pobrano najnowsze losowania z serwera!")
       st.rerun()
     else:
-      st.warning(
-          "Baza danych jest aktualna lub serwer zewnętrzny jest chwilowo"
-          " niedostępny. Używam bazy lokalnej."
+      st.error(
+          "Nie udało się połączyć z serwerem wyników. Wyświetlam bazę z pliku"
+          " CSV."
       )
 
 df = st.session_state["live_df"]
@@ -218,7 +251,7 @@ if df is not None:
       for p in combinations(int_nums, 2):
         pair_counter[p] += 1
 
-  # DWA OSOBNE WYKRESY CZYTELNE NA TELEFONIE
+  # DWA OSOBNE WYKRESY
   if even_chart_data and odd_chart_data:
     st.markdown("---")
     st.markdown("📈 **Wykres 1: Skuteczność Top 10 Parzyste**")

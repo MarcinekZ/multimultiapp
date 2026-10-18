@@ -14,27 +14,34 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 
-# Niezawodna funkcja pobierająca świeże wyniki z serwera
+# Pobieranie świeżych wyników z oficjalnego API Lotto
 @st.cache_data(ttl=1800)
 def fetch_live_data():
   headers = {
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
           " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      )
+      ),
+      "Accept": "application/json",
   }
-  url = "https://www.mbnet.com.pl/dl.txt"
+  # Łączymy się z otwartym punktem API Lotto
+  url = "https://developers.lotto.pl/api/open/v1/lotteries/draw-results/last-results?gameType=MultiMulti"
   try:
     response = requests.get(url, headers=headers, timeout=10)
     if response.status_code == 200:
-      lines = response.text.strip().split("\n")
-      data_rows = []
-      for line in lines:
-        parts = line.strip().split()
-        if len(parts) >= 10:  # Przyjmujemy każdą linię mającą odpowiednią strukturę
-          data_rows.append(parts)
-      if data_rows:
-        return pd.DataFrame(data_rows)
+      data = response.json()
+      rows = []
+      for item in data:
+        draw_date = item.get("drawDate", "")[:10]
+        draw_time = (
+            "14:00" if "14:" in item.get("drawDate", "") else "22:00"
+        )
+        results = item.get("results", [])
+        if results:
+          nums = [f"{int(n):02d}" for n in results[0].get("resultsJson", [])]
+          rows.append([draw_date, draw_time] + nums)
+      if rows:
+        return pd.DataFrame(rows)
   except Exception:
     pass
   return None
@@ -62,7 +69,7 @@ if "live_df" not in st.session_state:
 
 # Przycisk aktualizacji wyników z internetu
 if st.button("🔄 Aktualizuj wyniki z internetu"):
-  with st.spinner("Pobieranie najnowszych losowań z sieci..."):
+  with st.spinner("Pobieranie najnowszych losowań z serwera Lotto..."):
     fresh_df = fetch_live_data()
     if fresh_df is not None and not fresh_df.empty:
       st.session_state["live_df"] = fresh_df
@@ -70,7 +77,8 @@ if st.button("🔄 Aktualizuj wyniki z internetu"):
       st.rerun()
     else:
       st.error(
-          "Nie udało się pobrać danych. Używam zapisanej bazy analitycznej."
+          "Serwer zewnętrzny jest chwilowo niedostępny. Wyświetlam zapisaną"
+          " bazę."
       )
 
 df = st.session_state["live_df"]

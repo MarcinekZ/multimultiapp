@@ -14,7 +14,81 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 
-# Funkcja pomocnicza do parsowania wiersza z bazy lub sieci
+# Funkcja do pobierania świeżych wyników z ogólnodostępnego archiwum tekstowego
+@st.cache_data(ttl=3600)  # Odświeża cache co godzinę
+def fetch_live_data():
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      )
+  }
+  url = "https://www.mbnet.com.pl/dl.txt"
+  try:
+    response = requests.get(url, headers=headers, timeout=10)
+    if response.status_code == 200:
+      lines = response.text.strip().split("\n")
+      data_rows = []
+      for line in lines:
+        parts = line.strip().split()
+        # Szukamy wpisów dla Multi Multi (zazwyczaj w pliku są oznaczone lub mają odpowiednią strukturę liczb)
+        if len(parts) >= 22:   gra, data, godzina, *liczby = parts[:25]
+        # Tworzymy wiersz zgodny z naszą strukturą
+        row = [data, godzina] + [
+            f"{int(n):02d}" for n in liczby if n.isdigit() and 1 <= int(n) <= 80
+        ]
+        if len(row) >= 12:
+          data_rows.append(row)
+        else:
+          # Alternatywny format parsowania linii
+          clean_parts = [p for p in parts if p.isdigit()]
+          if len(clean_parts) >= 20:
+            data_rows.append(parts)
+
+      if data_rows:
+        return pd.DataFrame(data_rows)
+  except Exception:
+    pass
+  return None
+
+
+# Awaryjne wczytywanie lokalnego CSV w razie braku internetu
+@st.cache_data(ttl=0)
+def load_local_data():
+  try:
+    return pd.read_csv("multi_multi (9).csv", header=None)
+  except Exception:
+    try:
+      return pd.read_csv("multi_multi (8).csv", header=None)
+    except Exception:
+      return None
+
+
+# Inicjalizacja stanu bazy danych
+if "live_df" not in st.session_state:
+  initial_df = fetch_live_data()
+  if initial_df is not None and not initial_df.empty:
+    st.session_state["live_df"] = initial_df
+  else:
+    st.session_state["live_df"] = load_local_data()
+
+# Przycisk wymuszenia aktualizacji
+if st.button("🔄 Aktualizuj wyniki z internetu"):
+  with st.spinner("Pobieranie najnowszych losowań z sieci..."):
+    fresh_df = fetch_live_data()
+    if fresh_df is not None and not fresh_df.empty:
+      st.session_state["live_df"] = fresh_df
+      st.success("Sukces! Baza została zaktualizowana o najnowsze losowania!")
+      st.rerun()
+    else:
+      st.error(
+          "Nie udało się pobrać danych. Używam zapisanej bazy analitycznej."
+      )
+
+df = st.session_state["live_df"]
+
+
+# Funkcja pomocnicza do parsowania wiersza
 def parse_row(row):
   items = [str(val).strip() for val in row if pd.notna(val)]
   date_str = ""
@@ -24,9 +98,9 @@ def parse_row(row):
   for item in items:
     if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
       date_str = item
-    elif "14" in item:
+    elif "14" in item or "14:00" in item:
       time_str = "14:00"
-    elif "22" in item or "21" in item:
+    elif "22" in item or "21" in item or "22:00" in item:
       time_str = "22:00"
     else:
       try:
@@ -39,95 +113,7 @@ def parse_row(row):
   return date_str, time_str, numbers
 
 
-# 1. Wczytywanie bazy lokalnej CSV z repozytorium
-@st.cache_data(ttl=0)
-def load_local_data():
-  try:
-    return pd.read_csv("multi_multi (9).csv", header=None)
-  except Exception:
-    try:
-      return pd.read_csv("multi_multi (8).csv", header=None)
-    except Exception:
-      return None
-
-
-df_base = load_local_data()
-
-# Obsługa stanu sesji dla pobranych online wyników
-if "live_df" not in st.session_state:
-  st.session_state["live_df"] = df_base
-
-
-# Niezawodna funkcja do pobierania losowań z sieci
-def fetch_online_results():
-  headers = {
-      "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/115.0.0.0 Safari/537.36"
-      )
-  }
-  urls = [
-      "https://www.mbnet.com.pl/dl.txt",
-      "https://www.lotto.pl/api/lotteries/draw-results/by-gametype?gameType=MultiMulti&size=50",
-  ]
-
-  # Próba pobrania z pierwszego pliku archiwalnego
-  try:
-    res = requests.get(urls[0], headers=headers, timeout=8)
-    if res.status_code == 200 and len(res.text) > 100:
-      lines = res.text.strip().split("\n")
-      parsed_rows = []
-      for line in lines:
-        parts = line.strip().split()
-        if len(parts) >= 3:
-          parsed_rows.append(parts)
-      if len(parsed_rows) > 10:
-        return pd.DataFrame(parsed_rows)
-  except Exception:
-    pass
-
-  # Próba alternatywna (API Lotto)
-  try:
-    res = requests.get(urls[1], headers=headers, timeout=8)
-    if res.status_code == 200:
-      data = res.json()
-      items = data.get("items", [])
-      parsed_rows = []
-      for draw in items:
-        date_raw = draw.get("drawDate", "")[:10]
-        # Wyciągamy godziny / numery
-        results = draw.get("results", [])
-        if results:
-          nums = [f"{int(x):02d}" for x in results[0].get("resultsJson", [])]
-          time_code = "14:00" if "14:" in draw.get("drawDate", "") else "22:00"
-          row = [date_raw, time_code] + nums
-          parsed_rows.append(row)
-      if parsed_rows:
-        return pd.DataFrame(parsed_rows)
-  except Exception:
-    pass
-
-  return None
-
-
-# 2. Przycisk do aktualizacji wyników w czasie rzeczywistym
-if st.button("🔄 Aktualizuj wyniki z internetu"):
-  with st.spinner("Łączenie z serwerami wyników Lotto..."):
-    online_data = fetch_online_results()
-    if online_data is not None and not online_data.empty:
-      st.session_state["live_df"] = online_data
-      st.success("Sukces! Pobrano najnowsze losowania z serwera!")
-      st.rerun()
-    else:
-      st.error(
-          "Nie udało się połączyć z serwerem wyników. Wyświetlam bazę z pliku"
-          " CSV."
-      )
-
-df = st.session_state["live_df"]
-
 if df is not None:
-  # Odwracamy bazę - najnowsze na samej górze
   df_reversed = df.iloc[::-1].reset_index(drop=True)
 
   # --- 4 OSTATNIE LOSOWANIA I PRZESKOKI ---
@@ -192,7 +178,6 @@ if df is not None:
       step=5,
   )
 
-  # Filtrowanie danych do analizy
   df_filtered = df.copy()
   matched = False
   for col in df.columns:
@@ -209,7 +194,6 @@ if df is not None:
 
   df_subset = df_filtered.tail(okres)
 
-  # Wyznaczanie Top 10 dla wybranego okresu
   all_numbers_temp = []
   for _, row in df_subset.iterrows():
     _, _, nums = parse_row(row)
@@ -222,7 +206,6 @@ if df is not None:
   top_odd_set = {num for num, _ in Counter(odd_temp).most_common(10)}
   top_even_set = {num for num, _ in Counter(even_temp).most_common(10)}
 
-  # Zbieranie danych do dwóch osobnych wykresów
   even_chart_data = []
   odd_chart_data = []
   table_details = []
@@ -251,7 +234,6 @@ if df is not None:
       for p in combinations(int_nums, 2):
         pair_counter[p] += 1
 
-  # DWA OSOBNE WYKRESY
   if even_chart_data and odd_chart_data:
     st.markdown("---")
     st.markdown("📈 **Wykres 1: Skuteczność Top 10 Parzyste**")

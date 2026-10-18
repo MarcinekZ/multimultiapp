@@ -14,8 +14,8 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 
-# Funkcja do pobierania świeżych wyników z ogólnodostępnego archiwum tekstowego
-@st.cache_data(ttl=3600)  # Odświeża cache co godzinę
+# Niezawodna funkcja pobierająca świeże wyniki z serwera
+@st.cache_data(ttl=1800)
 def fetch_live_data():
   headers = {
       "User-Agent": (
@@ -31,20 +31,8 @@ def fetch_live_data():
       data_rows = []
       for line in lines:
         parts = line.strip().split()
-        # Szukamy wpisów dla Multi Multi (zazwyczaj w pliku są oznaczone lub mają odpowiednią strukturę liczb)
-        if len(parts) >= 22:   gra, data, godzina, *liczby = parts[:25]
-        # Tworzymy wiersz zgodny z naszą strukturą
-        row = [data, godzina] + [
-            f"{int(n):02d}" for n in liczby if n.isdigit() and 1 <= int(n) <= 80
-        ]
-        if len(row) >= 12:
-          data_rows.append(row)
-        else:
-          # Alternatywny format parsowania linii
-          clean_parts = [p for p in parts if p.isdigit()]
-          if len(clean_parts) >= 20:
-            data_rows.append(parts)
-
+        if len(parts) >= 10:  # Przyjmujemy każdą linię mającą odpowiednią strukturę
+          data_rows.append(parts)
       if data_rows:
         return pd.DataFrame(data_rows)
   except Exception:
@@ -52,7 +40,7 @@ def fetch_live_data():
   return None
 
 
-# Awaryjne wczytywanie lokalnego CSV w razie braku internetu
+# Awaryjne wczytywanie lokalnego CSV
 @st.cache_data(ttl=0)
 def load_local_data():
   try:
@@ -72,7 +60,7 @@ if "live_df" not in st.session_state:
   else:
     st.session_state["live_df"] = load_local_data()
 
-# Przycisk wymuszenia aktualizacji
+# Przycisk aktualizacji wyników z internetu
 if st.button("🔄 Aktualizuj wyniki z internetu"):
   with st.spinner("Pobieranie najnowszych losowań z sieci..."):
     fresh_df = fetch_live_data()
@@ -98,9 +86,9 @@ def parse_row(row):
   for item in items:
     if re.search(r"\d{2,4}[-.]\d{2}[-.]\d{2,4}", item):
       date_str = item
-    elif "14" in item or "14:00" in item:
+    elif "14" in item:
       time_str = "14:00"
-    elif "22" in item or "21" in item or "22:00" in item:
+    elif "22" in item or "21" in item:
       time_str = "22:00"
     else:
       try:

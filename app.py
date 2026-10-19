@@ -2,6 +2,7 @@ import os
 from collections import Counter
 from itertools import combinations
 import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(
@@ -12,6 +13,7 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 FILE_NAME = "multi_multi (10).csv"
+DATA_URL = "http://mbnet.com.pl/dl.txt"
 
 
 def parse_row(row):
@@ -36,6 +38,29 @@ def load_data():
   else:
     return None
 
+
+# --- SEKCJA RĘCZNEJ AKTUALIZACJI ---
+col_act1, col_act2 = st.columns([2, 1])
+with col_act1:
+  st.markdown("#### 🔄 Aktualizacja Danych")
+with col_act2:
+  if st.button("Pobierz / Odśwież"):
+    with st.spinner("Pobieranie najnowszych wyników..."):
+      try:
+        response = requests.get(DATA_URL, timeout=10)
+        response.encoding = "utf-8"
+        if response.status_code == 200:
+          with open(FILE_NAME, "w", encoding="utf-8") as f:
+            f.write(response.text)
+          st.cache_data.clear()
+          st.success("Pomyślnie zaktualizowano bazę danych!")
+          st.rerun()
+        else:
+          st.warning("Nie udało się pobrać danych z serwera zewnętrznego.")
+      except Exception as e:
+        st.cache_data.clear()
+        st.info("Odświeżono pamięć podręczną aplikacji.")
+        st.rerun()
 
 df = load_data()
 
@@ -167,7 +192,9 @@ if df is not None and not df.empty:
   st.code(" ".join(zestaw2))
 
   # Zestaw 3: Dominujące Parzyste
-  parzyste_all = sorted([n for n in most_common if int(n) % 2 == 0][:n_skreslen])
+  parzyste_all = sorted(
+      [n for n in most_common if int(n) % 2 == 0][:n_skreslen]
+  )
   st.markdown(
       f"#### 🟣 Zestaw 3: Dominujące Parzyste ({n_skreslen} skreśleń)"
   )

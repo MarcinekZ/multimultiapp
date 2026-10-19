@@ -140,58 +140,82 @@ if df is not None and not df.empty:
 
   st.markdown("---")
 
-  # --- CZTERY REKOMENDOWANE ZAKŁADY (Z INDYWIDUALNYMI SUWAKAMI) ---
+  # --- CZTERY REKOMENDOWANE ZAKŁADY (Z WYBOREM SESJI I INDYWIDUALNYMI SUVAKAMI) ---
   st.markdown("### 🎲 4 Rekomendowane Zestawy Zakładów")
 
-  all_analyzed_numbers = []
+  rec_session = st.selectbox(
+      "Wybierz sesję dla zestawów rekomendowanych:",
+      ["Wszystkie", "Sesja 14:00", "Sesja 22:00"],
+  )
+
+  # Filtrowanie bazy pod rekomendacje w zależności od wybranej sesji
+  if rec_session == "Sesja 14:00":
+    df_rec = df_analyzed[
+        df_analyzed[2].astype(str).str.startswith("14")
+    ]
+  elif rec_session == "Sesja 22:00":
+    df_rec = df_analyzed[
+        df_analyzed[2].astype(str).str.startswith("22")
+    ]
+  else:
+    df_rec = df_analyzed
+
+  if df_rec.empty:
+    df_rec = df_analyzed  # Awaryjnie, gdyby filtr dał pusty zestaw
+
+  all_rec_numbers = []
   pair_counter = Counter()
 
-  for _, row in df_analyzed.iterrows():
+  for _, row in df_rec.iterrows():
     _, _, nums = parse_row(row)
-    all_analyzed_numbers.extend(nums)
+    all_rec_numbers.extend(nums)
     for p in combinations(sorted(nums), 2):
       pair_counter[p] += 1
 
-  counter_all = Counter(all_analyzed_numbers)
-  most_common = [num for num, _ in counter_all.most_common()]
-  least_common = [num for num, _ in counter_all.most_common()[::-1]]
+  counter_rec = Counter(all_rec_numbers)
+  most_common_rec = [num for num, _ in counter_rec.most_common()]
+  least_common_rec = [num for num, _ in counter_rec.most_common()[::-1]]
 
   # Zestaw 1: Najczęstsze
-  st.markdown("#### 🟢 Zestaw 1: Najczęstsze Liczby")
+  st.markdown(f"#### 🟢 Zestaw 1: Najczęstsze Liczby ({rec_session})")
   n1 = st.slider("Liczba skreśleń w Zestawie 1:", 1, 10, 6, key="s1")
-  zestaw1 = sorted(most_common[:n1])
+  zestaw1 = sorted(most_common_rec[:n1])
   st.code(" ".join(zestaw1))
 
   # Zestaw 2: Najrzadsze / Głodne
-  st.markdown("#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby")
+  st.markdown(f"#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby ({rec_session})")
   n2 = st.slider("Liczba skreśleń w Zestawie 2:", 1, 10, 6, key="s2")
-  zestaw2 = sorted(least_common[:n2])
+  zestaw2 = sorted(least_common_rec[:n2])
   st.code(" ".join(zestaw2))
 
   # Zestaw 3: Dominujące Parzyste
-  st.markdown("#### 🟣 Zestaw 3: Dominujące Parzyste")
+  st.markdown(f"#### 🟣 Zestaw 3: Dominujące Parzyste ({rec_session})")
   n3 = st.slider("Liczba skreśleń w Zestawie 3:", 1, 10, 6, key="s3")
-  parzyste_all = sorted([n for n in most_common if int(n) % 2 == 0][:n3])
+  parzyste_all = sorted(
+      [n for n in most_common_rec if int(n) % 2 == 0][:n3]
+  )
   st.code(" ".join(parzyste_all))
 
 
   # Zestaw 4: Synergia / Najczęściej razem
   def generate_synergy_set(n):
-    if not most_common:
+    if not most_common_rec:
       return []
-    best_start = most_common[0]
+    best_start = most_common_rec[0]
     selected = [best_start]
 
     while len(selected) < n:
       candidate_scores = Counter()
-      for num in most_common[:40]:
+      for num in most_common_rec[:40]:
         if num in selected:
           continue
         score = sum(pair_counter[tuple(sorted([num, s]))] for s in selected)
         candidate_scores[num] = score
 
       if not candidate_scores:
-        remaining = [n_item for n_item in most_common if n_item not in selected]
+        remaining = [
+            n_item for n_item in most_common_rec if n_item not in selected
+        ]
         if remaining:
           selected.append(remaining[0])
         else:
@@ -202,7 +226,7 @@ if df is not None and not df.empty:
     return sorted(selected)
 
 
-  st.markdown("#### 🟡 Zestaw 4: Synergia (Najczęściej razem)")
+  st.markdown(f"#### 🟡 Zestaw 4: Synergia (Najczęściej razem) ({rec_session})")
   n4 = st.slider("Liczba skreśleń w Zestawie 4:", 1, 10, 6, key="s4")
   zestaw4 = generate_synergy_set(n4)
   st.code(" ".join(zestaw4))

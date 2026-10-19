@@ -2,7 +2,6 @@ import os
 from collections import Counter
 from itertools import combinations
 import pandas as pd
-import requests
 import streamlit as st
 
 st.set_page_config(
@@ -13,7 +12,6 @@ st.title("🎯 Multi Multi AI System")
 st.subheader("Mobilny Panel Analityczny Ekipy")
 
 FILE_NAME = "multi_multi (10).csv"
-DATA_URL = "http://mbnet.com.pl/dl.txt"
 
 
 def parse_row(row):
@@ -39,43 +37,31 @@ def load_data():
     return None
 
 
-# --- SEKCJA RĘCZNEJ AKTUALIZACJI ---
-col_act1, col_act2 = st.columns([2, 1])
-with col_act1:
-  st.markdown("#### 🔄 Aktualizacja Danych")
-with col_act2:
-  if st.button("Pobierz / Odśwież"):
-    with st.spinner("Pobieranie najnowszych wyników..."):
-      try:
-        response = requests.get(DATA_URL, timeout=10)
-        response.encoding = "utf-8"
-        if response.status_code == 200:
-          with open(FILE_NAME, "w", encoding="utf-8") as f:
-            f.write(response.text)
-          st.cache_data.clear()
-          st.success("Pomyślnie zaktualizowano bazę danych!")
-          st.rerun()
-        else:
-          st.warning("Nie udało się pobrać danych z serwera zewnętrznego.")
-      except Exception as e:
-        st.cache_data.clear()
-        st.info("Odświeżono pamięć podręczną aplikacji.")
-        st.rerun()
-
 df = load_data()
 
 if df is not None and not df.empty:
   df_reversed = df.iloc[::-1].reset_index(drop=True)
 
-  # Pobranie wyników ostatniego losowania do sprawdzania trafień
+  # Pobranie wyników ostatniego losowania do sprawdzania trafień w Top 10
   _, _, last_draw_nums = parse_row(df_reversed.iloc[0])
   last_draw_set = set(last_draw_nums)
 
-  # --- OSTATNIE LOSOWANIA ---
+  # --- OSTATNIE LOSOWANIA Z PRZESKOKAMI (POWTÓRKAMI) ---
   st.markdown("### 📌 4 Ostatnie Losowania (Przeskoki)")
-  for idx, row in df_reversed.head(4).iterrows():
+  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
+
+  for i in range(4):
+    if i >= len(df_reversed):
+      break
+    row = df_reversed.iloc[i]
     d_str, t_str, nums = parse_row(row)
-    num_draw = len(df) - idx
+    num_draw = len(df) - i
+
+    # Pobranie liczb z poprzedniego losowania chronologicznie
+    prev_nums_set = set()
+    if i + 1 < len(df_reversed):
+      _, _, prev_nums = parse_row(df_reversed.iloc[i + 1])
+      prev_nums_set = set(prev_nums)
 
     info_line = f"**Losowanie #{num_draw}**"
     if d_str:
@@ -85,11 +71,17 @@ if df is not None and not df.empty:
 
     st.markdown(info_line)
     if nums:
-      mid = len(nums) // 2
-      line1 = " ".join(
-          [f"🔄{n}" if i < 2 else n for i, n in enumerate(nums[:mid])]
-      )
-      line2 = " ".join(nums[mid:])
+      # Oznaczanie przeskoki / powtórki z poprzedniego losowania
+      formatted_nums = []
+      for n in nums:
+        if n in prev_nums_set:
+          formatted_nums.append(f"🔄{n}")
+        else:
+          formatted_nums.append(n)
+
+      mid = len(formatted_nums) // 2
+      line1 = " ".join(formatted_nums[:mid])
+      line2 = " ".join(formatted_nums[mid:])
       st.code(f"{line1}\n{line2}")
 
   st.markdown("---")

@@ -1,5 +1,6 @@
 import os
 from collections import Counter
+from itertools import combinations
 import pandas as pd
 import streamlit as st
 
@@ -41,6 +42,10 @@ df = load_data()
 if df is not None and not df.empty:
   df_reversed = df.iloc[::-1].reset_index(drop=True)
 
+  # Pobranie wyników ostatniego losowania do sprawdzania trafień
+  _, _, last_draw_nums = parse_row(df_reversed.iloc[0])
+  last_draw_set = set(last_draw_nums)
+
   # --- OSTATNIE LOSOWANIA ---
   st.markdown("### 📌 4 Ostatnie Losowania (Przeskoki)")
   for idx, row in df_reversed.head(4).iterrows():
@@ -64,13 +69,27 @@ if df is not None and not df.empty:
 
   st.markdown("---")
 
+  # --- SUWAK ZAKRESU ANALIZY ---
+  st.markdown("### ⚙️ Ustawienia Analizy Statystycznej")
+  limit_option = st.select_slider(
+      "Wybierz zakres analizowanych ostatnich losowań:",
+      options=[5, 10, 20, 50, 100, "Wszystkie"],
+      value=20,
+  )
+
+  if limit_option == "Wszystkie":
+    df_analyzed = df
+  else:
+    df_analyzed = df.tail(int(limit_option))
+
   # --- ANALIZA: TOP 10 PARZYSTE / NIEPARZYSTE (14:00 vs 22:00) ---
-  st.markdown("### ⏰ Analiza Sesyjna: 14:00 vs 22:00")
+  st.markdown(f"### ⏰ Top 10 Sesyjne (Zakres: {limit_option} losowań)")
+  st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 
   numbers_14 = []
   numbers_22 = []
 
-  for _, row in df.iterrows():
+  for _, row in df_analyzed.iterrows():
     _, t_str, nums = parse_row(row)
     if t_str.startswith("14"):
       numbers_14.extend(nums)
@@ -78,28 +97,31 @@ if df is not None and not df.empty:
       numbers_22.extend(nums)
 
 
-  def get_top_even_odd(nums_list):
+  def get_top_even_odd_highlighted(nums_list):
     counter = Counter(nums_list)
     sorted_nums = [item[0] for item in counter.most_common()]
     even = [n for n in sorted_nums if int(n) % 2 == 0][:10]
     odd = [n for n in sorted_nums if int(n) % 2 != 0][:10]
-    return even, odd
+
+    even_fmt = [f"{n}✅" if n in last_draw_set else n for n in even]
+    odd_fmt = [f"{n}✅" if n in last_draw_set else n for n in odd]
+    return even_fmt, odd_fmt
 
 
-  even_14, odd_14 = get_top_even_odd(numbers_14)
-  even_22, odd_22 = get_top_even_odd(numbers_22)
+  even_14, odd_14 = get_top_even_odd_highlighted(numbers_14)
+  even_22, odd_22 = get_top_even_odd_highlighted(numbers_22)
 
   col1, col2 = st.columns(2)
 
   with col1:
-    st.markdown("#### ☀️ Sesja 14:00")
+    st.markdown("#### ☀️ Godzina 14:00")
     st.markdown("**Top 10 Parzyste:**")
     st.code(" ".join(even_14))
     st.markdown("**Top 10 Nieparzyste:**")
     st.code(" ".join(odd_14))
 
   with col2:
-    st.markdown("#### 🌙 Sesja 22:00")
+    st.markdown("#### 🌙 Godzina 22:00")
     st.markdown("**Top 10 Parzyste:**")
     st.code(" ".join(even_22))
     st.markdown("**Top 10 Nieparzyste:**")
@@ -107,37 +129,84 @@ if df is not None and not df.empty:
 
   st.markdown("---")
 
-  # --- GENERATOR REKOMENDOWANYCH ZAKŁADÓW ---
-  st.markdown("### 🎲 Generator Rekomendowanych Zakładów")
+  # --- CZTERY REKOMENDOWANE ZAKŁADY (W TYM SYNERGIA) ---
+  st.markdown("### 🎲 4 Rekomendowane Zestawy Zakładów")
 
-  all_numbers = []
-  for _, row in df.iterrows():
+  all_analyzed_numbers = []
+  pair_counter = Counter()
+
+  for _, row in df_analyzed.iterrows():
     _, _, nums = parse_row(row)
-    all_numbers.extend(nums)
+    all_analyzed_numbers.extend(nums)
+    for p in combinations(sorted(nums), 2):
+      pair_counter[p] += 1
 
-  counter_all = Counter(all_numbers)
+  counter_all = Counter(all_analyzed_numbers)
   most_common = [num for num, _ in counter_all.most_common()]
   least_common = [num for num, _ in counter_all.most_common()[::-1]]
 
   n_skreslen = st.slider(
-      "Wybierz liczbę skreśleń w zakładach (1-10):",
+      "Liczba skreśleń w zestawach (1-10):",
       min_value=1,
       max_value=10,
       value=6,
   )
 
+  # Zestaw 1: Najczęstsze
+  zestaw1 = sorted(most_common[:n_skreslen])
   st.markdown(
-      f"#### 🟢 Zestaw 1: Najczęściej Losowane Liczby ({n_skreslen} skreśleń)"
+      f"#### 🟢 Zestaw 1: Najczęstsze Liczby ({n_skreslen} skreśleń)"
   )
-  zestaw1 = most_common[:n_skreslen]
-  st.code(" ".join(sorted(zestaw1)))
+  st.code(" ".join(zestaw1))
 
+  # Zestaw 2: Najrzadsze / Głodne
+  zestaw2 = sorted(least_common[:n_skreslen])
   st.markdown(
-      f"#### 🔵 Zestaw 2: Najrzadziej Losowane / Głodne Liczby ({n_skreslen}"
-      " skreśleń)"
+      f"#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby ({n_skreslen} skreśleń)"
   )
-  zestaw2 = least_common[:n_skreslen]
-  st.code(" ".join(sorted(zestaw2)))
+  st.code(" ".join(zestaw2))
+
+  # Zestaw 3: Dominujące Parzyste
+  parzyste_all = sorted([n for n in most_common if int(n) % 2 == 0][:n_skreslen])
+  st.markdown(
+      f"#### 🟣 Zestaw 3: Dominujące Parzyste ({n_skreslen} skreśleń)"
+  )
+  st.code(" ".join(parzyste_all))
+
+
+  # Zestaw 4: Synergia / Najczęściej występujące razem
+  def generate_synergy_set(n):
+    if not most_common:
+      return []
+    best_start = most_common[0]
+    selected = [best_start]
+
+    while len(selected) < n:
+      candidate_scores = Counter()
+      for num in most_common[:40]:
+        if num in selected:
+          continue
+        score = sum(pair_counter[tuple(sorted([num, s]))] for s in selected)
+        candidate_scores[num] = score
+
+      if not candidate_scores:
+        remaining = [n_item for n_item in most_common if n_item not in selected]
+        if remaining:
+          selected.append(remaining[0])
+        else:
+          break
+      else:
+        best_candidate = candidate_scores.most_common(1)[0][0]
+        selected.append(best_candidate)
+    return sorted(selected)
+
+
+  zestaw4 = generate_synergy_set(n_skreslen)
+  st.markdown(
+      f"#### 🟡 Zestaw 4: Synergia (Najczęściej razem)"
+      f" ({n_skreslen} skreśleń)"
+  )
+  st.code(" ".join(zestaw4))
 
   # --- ARCHIWUM ---
   st.markdown("---")

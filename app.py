@@ -46,7 +46,7 @@ if df is not None and not df.empty:
   _, _, last_draw_nums = parse_row(df_reversed.iloc[0])
   last_draw_set = set(last_draw_nums)
 
-  # --- OSTATNIE LOSOWANIA Z PRZESKOKAMI (POWTÓRKAMI) ---
+  # --- OSTATNIE LOSOWANIA Z PRZESKOKAMI ---
   st.markdown("### 📌 4 Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -57,7 +57,6 @@ if df is not None and not df.empty:
     d_str, t_str, nums = parse_row(row)
     num_draw = len(df) - i
 
-    # Pobranie liczb z poprzedniego losowania chronologicznie
     prev_nums_set = set()
     if i + 1 < len(df_reversed):
       _, _, prev_nums = parse_row(df_reversed.iloc[i + 1])
@@ -71,14 +70,9 @@ if df is not None and not df.empty:
 
     st.markdown(info_line)
     if nums:
-      # Oznaczanie przeskoki / powtórki z poprzedniego losowania
-      formatted_nums = []
-      for n in nums:
-        if n in prev_nums_set:
-          formatted_nums.append(f"🔄{n}")
-        else:
-          formatted_nums.append(n)
-
+      formatted_nums = [
+          f"🔄{n}" if n in prev_nums_set else n for n in nums
+      ]
       mid = len(formatted_nums) // 2
       line1 = " ".join(formatted_nums[:mid])
       line2 = " ".join(formatted_nums[mid:])
@@ -146,7 +140,7 @@ if df is not None and not df.empty:
 
   st.markdown("---")
 
-  # --- CZTERY REKOMENDOWANE ZAKŁADY (W TYM SYNERGIA) ---
+  # --- CZTERY REKOMENDOWANE ZAKŁADY (Z INDYWIDUALNYMI SUWAKAMI) ---
   st.markdown("### 🎲 4 Rekomendowane Zestawy Zakładów")
 
   all_analyzed_numbers = []
@@ -162,38 +156,26 @@ if df is not None and not df.empty:
   most_common = [num for num, _ in counter_all.most_common()]
   least_common = [num for num, _ in counter_all.most_common()[::-1]]
 
-  n_skreslen = st.slider(
-      "Liczba skreśleń w zestawach (1-10):",
-      min_value=1,
-      max_value=10,
-      value=6,
-  )
-
   # Zestaw 1: Najczęstsze
-  zestaw1 = sorted(most_common[:n_skreslen])
-  st.markdown(
-      f"#### 🟢 Zestaw 1: Najczęstsze Liczby ({n_skreslen} skreśleń)"
-  )
+  st.markdown("#### 🟢 Zestaw 1: Najczęstsze Liczby")
+  n1 = st.slider("Liczba skreśleń w Zestawie 1:", 1, 10, 6, key="s1")
+  zestaw1 = sorted(most_common[:n1])
   st.code(" ".join(zestaw1))
 
   # Zestaw 2: Najrzadsze / Głodne
-  zestaw2 = sorted(least_common[:n_skreslen])
-  st.markdown(
-      f"#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby ({n_skreslen} skreśleń)"
-  )
+  st.markdown("#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby")
+  n2 = st.slider("Liczba skreśleń w Zestawie 2:", 1, 10, 6, key="s2")
+  zestaw2 = sorted(least_common[:n2])
   st.code(" ".join(zestaw2))
 
   # Zestaw 3: Dominujące Parzyste
-  parzyste_all = sorted(
-      [n for n in most_common if int(n) % 2 == 0][:n_skreslen]
-  )
-  st.markdown(
-      f"#### 🟣 Zestaw 3: Dominujące Parzyste ({n_skreslen} skreśleń)"
-  )
+  st.markdown("#### 🟣 Zestaw 3: Dominujące Parzyste")
+  n3 = st.slider("Liczba skreśleń w Zestawie 3:", 1, 10, 6, key="s3")
+  parzyste_all = sorted([n for n in most_common if int(n) % 2 == 0][:n3])
   st.code(" ".join(parzyste_all))
 
 
-  # Zestaw 4: Synergia / Najczęściej występujące razem
+  # Zestaw 4: Synergia / Najczęściej razem
   def generate_synergy_set(n):
     if not most_common:
       return []
@@ -220,11 +202,9 @@ if df is not None and not df.empty:
     return sorted(selected)
 
 
-  zestaw4 = generate_synergy_set(n_skreslen)
-  st.markdown(
-      f"#### 🟡 Zestaw 4: Synergia (Najczęściej razem)"
-      f" ({n_skreslen} skreśleń)"
-  )
+  st.markdown("#### 🟡 Zestaw 4: Synergia (Najczęściej razem)")
+  n4 = st.slider("Liczba skreśleń w Zestawie 4:", 1, 10, 6, key="s4")
+  zestaw4 = generate_synergy_set(n4)
   st.code(" ".join(zestaw4))
 
   # --- ARCHIWUM ---

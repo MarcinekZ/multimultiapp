@@ -2,9 +2,11 @@ name: Automatyczna Aktualizacja Wyników Multi Multi
 
 on:
   schedule:
-    # 10 12,20 * * * w UTC oznacza dokładnie 14:10 oraz 22:10 czasu polskiego
     - cron: '10 12,20 * * *'
-  workflow_dispatch: # Umożliwia też ręczne kliknięcie w zakładce Actions
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update-data:

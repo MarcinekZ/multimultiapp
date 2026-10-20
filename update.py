@@ -13,25 +13,38 @@ try:
     new_rows = []
 
     for line in lines:
-      parts = line.replace(";", " ").split()
-      if len(parts) >= 4:
-        draw_id = parts[0]
-        date_str = parts[1]
-        time_str = parts[2]
-        nums = parts[3:]
-        # Poprawna kolejność: ID, Data, Godzina, Liczby
-        row = [draw_id, date_str, time_str] + nums
-        new_rows.append(row)
+      cleaned = line.replace(",", " ").replace(";", " ")
+      parts = cleaned.split()
+      if len(parts) >= 3:
+        # Inteligentne szukanie daty (ma kropkę) i godziny (ma dwukropek)
+        date_idx = -1
+        time_idx = -1
+        for idx, p in enumerate(parts[:5]):
+          if "." in p and len(p) >= 8:
+            date_idx = idx
+          elif ":" in p:
+            time_idx = idx
+
+        if date_idx != -1 and time_idx != -1:
+          draw_id = parts[date_idx - 1] if date_idx > 0 else ""
+          date_str = parts[date_idx]
+          time_str = parts[time_idx]
+          nums = parts[time_idx + 1 :]
+          row = [draw_id, date_str, time_str] + nums
+          new_rows.append(row)
+        else:
+          if len(parts) >= 4:
+            new_rows.append([parts[0], parts[1], parts[2]] + parts[3:])
 
     if new_rows:
       df_new = pd.DataFrame(new_rows)
       df_new.to_csv(FILE_NAME, index=False, header=False)
       print(
-          f"Pomyślnie zaktualizowano i sformatowano bazę. Łącznie wierszy:"
+          f"Pomyślnie zaktualizowano i naprawiono bazę. Łącznie wierszy:"
           f" {len(df_new)}"
       )
     else:
-      print("Błąd: Pusty lub niepoprawny format danych.")
+      print("Błąd: Nie znaleziono prawidłowych wierszy.")
   else:
     print(f"Błąd pobierania: status {response.status_code}")
 except Exception as e:

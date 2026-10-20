@@ -12,15 +12,15 @@ try:
     lines = response.text.strip().split("\n")
     new_rows = []
 
-    for idx, line in enumerate(lines, start=1):
-      # Rozdzielamy linie po średnikach lub spacjach
+    for line in lines:
       parts = line.replace(";", " ").split()
-      if len(parts) >= 3:
-        date_str = parts[0]
-        time_str = parts[1]
-        nums = parts[2:]
-        # Tworzymy wiersz: [ID, Data, Godzina, Liczby...]
-        row = [idx, date_str, time_str] + nums
+      if len(parts) >= 4:
+        draw_id = parts[0]
+        date_str = parts[1]
+        time_str = parts[2]
+        nums = parts[3:]
+        # Poprawna kolejność: ID, Data, Godzina, Liczby
+        row = [draw_id, date_str, time_str] + nums
         new_rows.append(row)
 
     if new_rows:

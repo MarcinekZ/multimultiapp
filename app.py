@@ -13,9 +13,10 @@ FILE_NAME = "multi_multi (10).csv"
 def load_data():
   try:
     df = pd.read_csv(FILE_NAME, header=None)
-    # Tworzymy nagłówki dla 23 kolumn: ID, Data, Godzina, 20 liczb
     num_cols = df.shape[1]
-    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
+    cols = ["ID", "Data", "Godzina"] + [
+        f"L{i}" for i in range(1, num_cols - 2)
+    ]
     df.columns = cols
     return df
   except Exception as e:
@@ -63,12 +64,16 @@ if df is not None and not df.empty:
 
   # Ustawienia Analizy Statystycznej
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
+  st.caption(
+      "Wpisz dokładną liczbę ostatnich losowań do analizy (np. 1, 5, 20, 50,"
+      " 100...):"
+  )
 
   total_draws = len(df)
 
-  # Precyzyjny suwak od 1 z krokiem co 1
-  zakres = st.slider(
-      "Wybierz zakres analizowanych ostatnich losowań:",
+  # Precyzyjne pole liczbowe idealne na telefony
+  zakres = st.number_input(
+      "Zakres losowań:",
       min_value=1,
       max_value=total_draws,
       value=20,
@@ -78,12 +83,11 @@ if df is not None and not df.empty:
   st.divider()
 
   # Analiza Top 10 Sesyjne
-  st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {zakres} losowań)")
+  st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {int(zakres)} losowań)")
   st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 
-  df_analyzed = df.tail(zakres)
+  df_analyzed = df.tail(int(zakres))
 
-  # Najnowsze wyniki do weryfikacji trafień (✅)
   latest_draw = df.iloc[-1]
   latest_nums = set(latest_draw.iloc[3:].values)
 
@@ -99,12 +103,15 @@ if df is not None and not df.empty:
       all_session_nums = df_session.iloc[:, 3:].values.flatten()
       counts = pd.Series(all_session_nums).value_counts()
 
-      # Wycinki parzyste i nieparzyste
       even_counts = counts[
-          counts.index.map(lambda x: int(x) % 2 == 0 if str(x).isdigit() else False)
+          counts.index.map(
+              lambda x: int(x) % 2 == 0 if str(x).isdigit() else False
+          )
       ]
       odd_counts = counts[
-          counts.index.map(lambda x: int(x) % 2 != 0 if str(x).isdigit() else False)
+          counts.index.map(
+              lambda x: int(x) % 2 != 0 if str(x).isdigit() else False
+          )
       ]
 
       top_even = even_counts.head(10).index.tolist()
@@ -134,6 +141,9 @@ if df is not None and not df.empty:
           else "Brak danych w wybranym zakresie"
       )
     else:
-      st.info(f"Brak losowań z godziny {session_time} w wybranym zakresie.")
+      st.info(
+          f"Brak losowań z godziny {session_time} w tym zakresie (zwiększ zakres,"
+          " aby objąć tę sesję)."
+      )
 else:
   st.warning("Oczekiwanie na ładowanie bazy danych...")

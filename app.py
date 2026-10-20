@@ -31,7 +31,7 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. ARCHIWUM / OSTATNIE LOSOWANIA (PRZYWRÓCONE NA GÓRĘ)
+  # 1. ARCHIWUM LOSOWAŃ (PRZYWRÓCONE)
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -64,11 +64,10 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # 2. USTAWIENIA ANALIZY (PLUS/MINUS + SZYBKIE PRZYCISKI)
+  # 2. USTAWIENIA ANALIZY (PRZYCISKI + PLUS/MINUS)
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
-  st.caption("Wybierz zakres losowań (użyj przycisków lub plus/minus):")
+  st.caption("Wybierz zakres losowań do analizy:")
 
-  # Szybkie przyciski idealne na telefon
   cols_btn = st.columns(6)
   if cols_btn[0].button("5"):
     st.session_state["zakres_val"] = 5
@@ -85,7 +84,6 @@ if df is not None and not df.empty:
 
   default_val = st.session_state.get("zakres_val", 20)
 
-  # Precyzyjne pole z plus / minus
   zakres = st.number_input(
       "Zakres losowań:",
       min_value=1,
@@ -96,12 +94,11 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # 3. ANALIZA TOP 10 SESYJNE
+  # 3. TOP 10 SESYJNE ORAZ REKOMENDOWANE ZAKŁADY
   st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {int(zakres)} losowań)")
   st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 
   df_analyzed = df.tail(int(zakres))
-
   latest_draw = df.iloc[-1]
   latest_nums = set(latest_draw.iloc[3:].values)
 
@@ -154,6 +151,26 @@ if df is not None and not df.empty:
           if top_odd
           else "Brak danych w wybranym zakresie"
       )
+
+      # REKOMENDOWANE ZAKŁADY (PRZYWRÓCONE)
+      st.markdown(
+          "🎯 **Rekomendowany Zakład (Top 5 Parzyste + Top 5 Nieparzyste):**"
+      )
+      rec_even = [f"{int(n):02d}" for n in top_even[:5] if str(n).isdigit()]
+      rec_odd = [f"{int(n):02d}" for n in top_odd[:5] if str(n).isdigit()]
+      recommended_combo = sorted(rec_even + rec_odd, key=lambda x: int(x))
+
+      rec_display = []
+      for n_str in recommended_combo:
+        if int(n_str) in [int(x) for x in latest_nums if str(x).isdigit()]:
+          rec_display.append(f"{n_str}✅")
+        else:
+          rec_display.append(n_str)
+
+      st.code(
+          " ".join(rec_display) if rec_display else "Brak danych", language=None
+      )
+
     else:
       st.info(
           f"Brak losowań z godziny {session_time} w tym zakresie (zwiększ zakres,"

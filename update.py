@@ -1,21 +1,17 @@
+import os
 import requests
 
-# Zewnętrzne źródło wyników
-url = "http://mbnet.com.pl/dl.txt"
-file_name = "multi_multi (10).csv"
+DATA_URL = "http://mbnet.com.pl/dl.txt"
+FILE_NAME = "multi_multi (10).csv"
 
 try:
-    print(f"Pobieranie danych z {url}...")
-    response = requests.get(url, timeout=15)
-    response.encoding = 'utf-8'
-    response.raise_for_status()
-
-    # Zapisujemy pobraną treść do właściwego pliku CSV
-    with open(file_name, "w", encoding="utf-8") as f:
-        f.write(response.text)
-
-    print(f"Sukces: Plik {file_name} został pomyślnie zaktualizowany!")
-
+  response = requests.get(DATA_URL, timeout=15)
+  response.encoding = "utf-8"
+  if response.status_code == 200:
+    with open(FILE_NAME, "w", encoding="utf-8") as f:
+      f.write(response.text)
+    print("Pomyślnie pobrano i zaktualizowano bazę wyników.")
+  else:
+    print(f"Błąd pobierania: status {response.status_code}")
 except Exception as e:
-    print(f"Błąd podczas pobierania lub zapisu danych: {e}")
-    exit(1)
+  print(f"Wystąpił błąd: {e}")

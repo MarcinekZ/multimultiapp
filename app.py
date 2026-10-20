@@ -1,251 +1,139 @@
-import os
-from collections import Counter
-from itertools import combinations
 import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Multi Multi AI System", page_icon="🎯", layout="centered"
+    page_title="Multi Multi Analytics PWA", page_icon="🎯", layout="wide"
 )
-
-st.title("🎯 Multi Multi AI System")
-st.subheader("Mobilny Panel Analityczny Ekipy")
 
 FILE_NAME = "multi_multi (10).csv"
 
 
-def parse_row(row):
-  try:
-    d_str = str(row[1]).strip() if len(row) > 1 else ""
-    t_str = str(row[2]).strip() if len(row) > 2 else ""
-    nums = [
-        f"{int(x):02d}"
-        for x in row[3:]
-        if pd.notna(x) and str(x).strip().isdigit()
-    ]
-    return d_str, t_str, nums
-  except Exception:
-    return "", "", []
-
-
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def load_data():
-  if os.path.exists(FILE_NAME):
+  try:
     df = pd.read_csv(FILE_NAME, header=None)
+    # Tworzymy nagłówki dla 23 kolumn: ID, Data, Godzina, 20 liczb
+    num_cols = df.shape[1]
+    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
+    df.columns = cols
     return df
-  else:
+  except Exception as e:
+    st.error(f"Błąd podczas ładowania pliku CSV: {e}")
     return None
 
 
 df = load_data()
 
+st.title("📱 Mobilny Panel Analityczny Ekipy")
+
 if df is not None and not df.empty:
-  df_reversed = df.iloc[::-1].reset_index(drop=True)
-
-  # Pobranie wyników ostatniego losowania do sprawdzania trafień w Top 10
-  _, _, last_draw_nums = parse_row(df_reversed.iloc[0])
-  last_draw_set = set(last_draw_nums)
-
-  # --- OSTATNIE LOSOWANIA Z PRZESKOKAMI ---
-  st.markdown("### 📌 4 Ostatnie Losowania (Przeskoki)")
+  # Podgląd ostatnich losowań z przeskokami
+  st.subheader("📌 4 Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
-  for i in range(4):
-    if i >= len(df_reversed):
-      break
-    row = df_reversed.iloc[i]
-    d_str, t_str, nums = parse_row(row)
-    num_draw = len(df) - i
+  recent_df = df.tail(5).iloc[::-1]
+  for i in range(len(recent_df) - 1):
+    curr = recent_df.iloc[i]
+    prev = recent_df.iloc[i + 1]
 
-    prev_nums_set = set()
-    if i + 1 < len(df_reversed):
-      _, _, prev_nums = parse_row(df_reversed.iloc[i + 1])
-      prev_nums_set = set(prev_nums)
+    curr_nums = set(curr.iloc[3:].values)
+    prev_nums = set(prev.iloc[3:].values)
+    repeated = curr_nums.intersection(prev_nums)
 
-    info_line = f"**Losowanie #{num_draw}**"
-    if d_str:
-      info_line += f" | 📅 {d_str}"
-    if t_str:
-      info_line += f" | ⏰ {t_str}"
+    draw_id = curr["ID"]
+    date_str = curr["Data"]
+    time_str = curr["Godzina"]
 
-    st.markdown(info_line)
-    if nums:
-      formatted_nums = [
-          f"🔄{n}" if n in prev_nums_set else n for n in nums
-      ]
-      mid = len(formatted_nums) // 2
-      line1 = " ".join(formatted_nums[:mid])
-      line2 = " ".join(formatted_nums[mid:])
-      st.code(f"{line1}\n{line2}")
+    st.markdown(
+        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
+    )
 
-  st.markdown("---")
+    formatted_display = []
+    for val in curr.iloc[3:].values:
+      val_str = f"{int(val):02d}" if str(val).isdigit() else str(val)
+      if val in repeated:
+        formatted_display.append(f"🔄{val_str}")
+      else:
+        formatted_display.append(f"{val_str}")
 
-  # --- SUWAK ZAKRESU ANALIZY ---
-  st.markdown("### ⚙️ Ustawienia Analizy Statystycznej")
-  limit_option = st.select_slider(
+    st.code(" ".join(formatted_display), language=None)
+
+  st.divider()
+
+  # Ustawienia Analizy Statystycznej
+  st.subheader("⚙️ Ustawienia Analizy Statystycznej")
+
+  total_draws = len(df)
+
+  # Precyzyjny suwak od 1 z krokiem co 1
+  zakres = st.slider(
       "Wybierz zakres analizowanych ostatnich losowań:",
-      options=[5, 10, 20, 50, 100, "Wszystkie"],
+      min_value=1,
+      max_value=total_draws,
       value=20,
+      step=1,
   )
 
-  if limit_option == "Wszystkie":
-    df_analyzed = df
-  else:
-    df_analyzed = df.tail(int(limit_option))
+  st.divider()
 
-  # --- ANALIZA: TOP 10 PARZYSTE / NIEPARZYSTE (14:00 vs 22:00) ---
-  st.markdown(f"### ⏰ Top 10 Sesyjne (Zakres: {limit_option} losowań)")
+  # Analiza Top 10 Sesyjne
+  st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {zakres} losowań)")
   st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 
-  numbers_14 = []
-  numbers_22 = []
+  df_analyzed = df.tail(zakres)
 
-  for _, row in df_analyzed.iterrows():
-    _, t_str, nums = parse_row(row)
-    if t_str.startswith("14"):
-      numbers_14.extend(nums)
-    elif t_str.startswith("22"):
-      numbers_22.extend(nums)
+  # Najnowsze wyniki do weryfikacji trafień (✅)
+  latest_draw = df.iloc[-1]
+  latest_nums = set(latest_draw.iloc[3:].values)
 
+  for session_time, session_label, icon in [
+      ("14:00", "Godzina 14:00", "☀️"),
+      ("22:00", "Godzina 22:00", "🌙"),
+  ]:
+    st.markdown(f"### {icon} {session_label}")
 
-  def get_top_even_odd_highlighted(nums_list):
-    counter = Counter(nums_list)
-    sorted_nums = [item[0] for item in counter.most_common()]
-    even = [n for n in sorted_nums if int(n) % 2 == 0][:10]
-    odd = [n for n in sorted_nums if int(n) % 2 != 0][:10]
+    df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
 
-    even_fmt = [f"{n}✅" if n in last_draw_set else n for n in even]
-    odd_fmt = [f"{n}✅" if n in last_draw_set else n for n in odd]
-    return even_fmt, odd_fmt
+    if not df_session.empty:
+      all_session_nums = df_session.iloc[:, 3:].values.flatten()
+      counts = pd.Series(all_session_nums).value_counts()
 
+      # Wycinki parzyste i nieparzyste
+      even_counts = counts[
+          counts.index.map(lambda x: int(x) % 2 == 0 if str(x).isdigit() else False)
+      ]
+      odd_counts = counts[
+          counts.index.map(lambda x: int(x) % 2 != 0 if str(x).isdigit() else False)
+      ]
 
-  even_14, odd_14 = get_top_even_odd_highlighted(numbers_14)
-  even_22, odd_22 = get_top_even_odd_highlighted(numbers_22)
+      top_even = even_counts.head(10).index.tolist()
+      top_odd = odd_counts.head(10).index.tolist()
 
-  col1, col2 = st.columns(2)
+      def format_top_list(num_list):
+        res = []
+        for n in num_list:
+          n_str = f"{int(n):02d}" if str(n).isdigit() else str(n)
+          if n in latest_nums:
+            res.append(f"{n_str}✅")
+          else:
+            res.append(f"{n_str}")
+        return " ".join(res)
 
-  with col1:
-    st.markdown("#### ☀️ Godzina 14:00")
-    st.markdown("**Top 10 Parzyste:**")
-    st.code(" ".join(even_14))
-    st.markdown("**Top 10 Nieparzyste:**")
-    st.code(" ".join(odd_14))
+      st.markdown("**Top 10 Parzyste:**")
+      st.code(
+          format_top_list(top_even)
+          if top_even
+          else "Brak danych w wybranym zakresie"
+      )
 
-  with col2:
-    st.markdown("#### 🌙 Godzina 22:00")
-    st.markdown("**Top 10 Parzyste:**")
-    st.code(" ".join(even_22))
-    st.markdown("**Top 10 Nieparzyste:**")
-    st.code(" ".join(odd_22))
-
-  st.markdown("---")
-
-  # --- CZTERY REKOMENDOWANE ZAKŁADY (Z WYBOREM SESJI I INDYWIDUALNYMI SUVAKAMI) ---
-  st.markdown("### 🎲 4 Rekomendowane Zestawy Zakładów")
-
-  rec_session = st.selectbox(
-      "Wybierz sesję dla zestawów rekomendowanych:",
-      ["Wszystkie", "Sesja 14:00", "Sesja 22:00"],
-  )
-
-  # Filtrowanie bazy pod rekomendacje w zależności od wybranej sesji
-  if rec_session == "Sesja 14:00":
-    df_rec = df_analyzed[
-        df_analyzed[2].astype(str).str.startswith("14")
-    ]
-  elif rec_session == "Sesja 22:00":
-    df_rec = df_analyzed[
-        df_analyzed[2].astype(str).str.startswith("22")
-    ]
-  else:
-    df_rec = df_analyzed
-
-  if df_rec.empty:
-    df_rec = df_analyzed  # Awaryjnie, gdyby filtr dał pusty zestaw
-
-  all_rec_numbers = []
-  pair_counter = Counter()
-
-  for _, row in df_rec.iterrows():
-    _, _, nums = parse_row(row)
-    all_rec_numbers.extend(nums)
-    for p in combinations(sorted(nums), 2):
-      pair_counter[p] += 1
-
-  counter_rec = Counter(all_rec_numbers)
-  most_common_rec = [num for num, _ in counter_rec.most_common()]
-  least_common_rec = [num for num, _ in counter_rec.most_common()[::-1]]
-
-  # Zestaw 1: Najczęstsze
-  st.markdown(f"#### 🟢 Zestaw 1: Najczęstsze Liczby ({rec_session})")
-  n1 = st.slider("Liczba skreśleń w Zestawie 1:", 1, 10, 6, key="s1")
-  zestaw1 = sorted(most_common_rec[:n1])
-  st.code(" ".join(zestaw1))
-
-  # Zestaw 2: Najrzadsze / Głodne
-  st.markdown(f"#### 🔵 Zestaw 2: Najrzadsze / 'Głodne' Liczby ({rec_session})")
-  n2 = st.slider("Liczba skreśleń w Zestawie 2:", 1, 10, 6, key="s2")
-  zestaw2 = sorted(least_common_rec[:n2])
-  st.code(" ".join(zestaw2))
-
-  # Zestaw 3: Dominujące Parzyste
-  st.markdown(f"#### 🟣 Zestaw 3: Dominujące Parzyste ({rec_session})")
-  n3 = st.slider("Liczba skreśleń w Zestawie 3:", 1, 10, 6, key="s3")
-  parzyste_all = sorted(
-      [n for n in most_common_rec if int(n) % 2 == 0][:n3]
-  )
-  st.code(" ".join(parzyste_all))
-
-
-  # Zestaw 4: Synergia / Najczęściej razem
-  def generate_synergy_set(n):
-    if not most_common_rec:
-      return []
-    best_start = most_common_rec[0]
-    selected = [best_start]
-
-    while len(selected) < n:
-      candidate_scores = Counter()
-      for num in most_common_rec[:40]:
-        if num in selected:
-          continue
-        score = sum(pair_counter[tuple(sorted([num, s]))] for s in selected)
-        candidate_scores[num] = score
-
-      if not candidate_scores:
-        remaining = [
-            n_item for n_item in most_common_rec if n_item not in selected
-        ]
-        if remaining:
-          selected.append(remaining[0])
-        else:
-          break
-      else:
-        best_candidate = candidate_scores.most_common(1)[0][0]
-        selected.append(best_candidate)
-    return sorted(selected)
-
-
-  st.markdown(f"#### 🟡 Zestaw 4: Synergia (Najczęściej razem) ({rec_session})")
-  n4 = st.slider("Liczba skreśleń w Zestawie 4:", 1, 10, 6, key="s4")
-  zestaw4 = generate_synergy_set(n4)
-  st.code(" ".join(zestaw4))
-
-  # --- ARCHIWUM ---
-  st.markdown("---")
-  with st.expander("📂 Archiwum: Przeglądaj wszystkie wyniki"):
-    st.markdown("### Baza wyników (od najnowszych)")
-    for idx, row in df_reversed.head(50).iterrows():
-      d_str, t_str, nums = parse_row(row)
-      if nums:
-        num_draw = len(df) - idx
-        info_line = f"**Losowanie #{num_draw}**"
-        if d_str:
-          info_line += f" | 📅 {d_str}"
-        if t_str:
-          info_line += f" | ⏰ {t_str}"
-        st.markdown(info_line)
-        st.code(" ".join(nums))
-
+      st.markdown("**Top 10 Nieparzyste:**")
+      st.code(
+          format_top_list(top_odd)
+          if top_odd
+          else "Brak danych w wybranym zakresie"
+      )
+    else:
+      st.info(f"Brak losowań z godziny {session_time} w wybranym zakresie.")
 else:
-  st.error(f"Nie znaleziono pliku {FILE_NAME} w repozytorium.")
+  st.warning("Oczekiwanie na ładowanie bazy danych...")

@@ -29,8 +29,10 @@ df = load_data()
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
 if df is not None and not df.empty:
-  # Podgląd ostatnich losowań z przeskokami
-  st.subheader("📌 4 Ostatnie Losowania (Przeskoki)")
+  total_draws = len(df)
+
+  # 1. ARCHIWUM / OSTATNIE LOSOWANIA (PRZYWRÓCONE NA GÓRĘ)
+  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
   recent_df = df.tail(5).iloc[::-1]
@@ -62,27 +64,39 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # Ustawienia Analizy Statystycznej
+  # 2. USTAWIENIA ANALIZY (PLUS/MINUS + SZYBKIE PRZYCISKI)
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
-  st.caption(
-      "Wpisz dokładną liczbę ostatnich losowań do analizy (np. 1, 5, 20, 50,"
-      " 100...):"
-  )
+  st.caption("Wybierz zakres losowań (użyj przycisków lub plus/minus):")
 
-  total_draws = len(df)
+  # Szybkie przyciski idealne na telefon
+  cols_btn = st.columns(6)
+  if cols_btn[0].button("5"):
+    st.session_state["zakres_val"] = 5
+  if cols_btn[1].button("10"):
+    st.session_state["zakres_val"] = 10
+  if cols_btn[2].button("20"):
+    st.session_state["zakres_val"] = 20
+  if cols_btn[3].button("50"):
+    st.session_state["zakres_val"] = 50
+  if cols_btn[4].button("100"):
+    st.session_state["zakres_val"] = 100
+  if cols_btn[5].button("Max"):
+    st.session_state["zakres_val"] = total_draws
 
-  # Precyzyjne pole liczbowe idealne na telefony
+  default_val = st.session_state.get("zakres_val", 20)
+
+  # Precyzyjne pole z plus / minus
   zakres = st.number_input(
       "Zakres losowań:",
       min_value=1,
       max_value=total_draws,
-      value=20,
+      value=int(default_val),
       step=1,
   )
 
   st.divider()
 
-  # Analiza Top 10 Sesyjne
+  # 3. ANALIZA TOP 10 SESYJNE
   st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {int(zakres)} losowań)")
   st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 

@@ -31,7 +31,7 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. ARCHIWUM LOSOWAŃ (PRZYWRÓCONE)
+  # 1. ARCHIWUM OSTATNICH LOSOWAŃ (PRZESKOKI)
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -64,37 +64,23 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # 2. USTAWIENIA ANALIZY (PRZYCISKI + PLUS/MINUS)
+  # 2. USTAWIENIA ANALIZY (PRECYZYJNY PLUS / MINUS)
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
-  st.caption("Wybierz zakres losowań do analizy:")
-
-  cols_btn = st.columns(6)
-  if cols_btn[0].button("5"):
-    st.session_state["zakres_val"] = 5
-  if cols_btn[1].button("10"):
-    st.session_state["zakres_val"] = 10
-  if cols_btn[2].button("20"):
-    st.session_state["zakres_val"] = 20
-  if cols_btn[3].button("50"):
-    st.session_state["zakres_val"] = 50
-  if cols_btn[4].button("100"):
-    st.session_state["zakres_val"] = 100
-  if cols_btn[5].button("Max"):
-    st.session_state["zakres_val"] = total_draws
-
-  default_val = st.session_state.get("zakres_val", 20)
+  st.caption(
+      "Wpisz dokładny zakres lub użyj przycisków plus/minus (1, 2, 3, 4, 5...):"
+  )
 
   zakres = st.number_input(
       "Zakres losowań:",
       min_value=1,
       max_value=total_draws,
-      value=int(default_val),
+      value=min(20, total_draws),
       step=1,
   )
 
   st.divider()
 
-  # 3. TOP 10 SESYJNE ORAZ REKOMENDOWANE ZAKŁADY
+  # 3. TOP 10 SESYJNE ORAZ REKOMENDOWANE ZAKŁADY (14:00 i 22:00)
   st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {int(zakres)} losowań)")
   st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
 
@@ -152,7 +138,7 @@ if df is not None and not df.empty:
           else "Brak danych w wybranym zakresie"
       )
 
-      # REKOMENDOWANE ZAKŁADY (PRZYWRÓCONE)
+      # REKOMENDOWANY ZAKŁAD SESYJNY
       st.markdown(
           "🎯 **Rekomendowany Zakład (Top 5 Parzyste + Top 5 Nieparzyste):**"
       )

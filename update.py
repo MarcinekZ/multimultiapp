@@ -11,13 +11,13 @@ try:
   if response.status_code == 200:
     lines = response.text.strip().split("\n")
     new_rows = []
+    date_counts = {}
 
     for line in lines:
       line = line.strip()
       if not line:
         continue
 
-      # Rozdzielamy linie po spacji / średniku / przecinku
       cleaned = line.replace(";", " ").replace(",", " ")
       parts = cleaned.split()
 
@@ -32,31 +32,32 @@ try:
         draw_id = parts[date_idx - 1] if date_idx > 0 else ""
         date_str = parts[date_idx]
 
-        # Drugi element po dacie to najczęściej godzina lub numer losowania w danym dniu
-        time_candidate = parts[date_idx + 1]
-
-        # Określamy godzinę 14:00 vs 22:00
-        if ":" in time_candidate:
-          time_str = time_candidate
-          nums_start = date_idx + 2
-        elif time_candidate == "1":
+        # Liczymy wystąpienia tej samej daty:
+        # 1. losowanie w danym dniu -> 14:00
+        # 2. losowanie w danym dniu -> 22:00
+        date_counts[date_str] = date_counts.get(date_str, 0) + 1
+        if date_counts[date_str] == 1:
           time_str = "14:00"
-          nums_start = date_idx + 2
-        elif time_candidate == "2":
+        else:
           time_str = "22:00"
+
+        # Sprawdzamy czy po dacie jest informacja o sesji/godzinie
+        candidate = parts[date_idx + 1]
+        if ":" in candidate:
+          time_str = candidate
+          nums_start = date_idx + 2
+        elif candidate in ["1", "2"]:
           nums_start = date_idx + 2
         else:
-          time_str = "14:00"
           nums_start = date_idx + 1
 
         raw_nums = parts[nums_start:]
-        # Formatujemy liczby do postaci 2-cyfrowej (np. "01", "04")
         formatted_nums = []
         for n in raw_nums:
           if n.isdigit():
             formatted_nums.append(f"{int(n):02d}")
 
-        if len(formatted_nums) >= 15:  # Upewniamy się, że mamy komplet liczb
+        if len(formatted_nums) >= 15:
           row = [draw_id, date_str, time_str] + formatted_nums
           new_rows.append(row)
 
@@ -64,11 +65,11 @@ try:
       df_new = pd.DataFrame(new_rows)
       df_new.to_csv(FILE_NAME, index=False, header=False)
       print(
-          f"Pomyślnie zaktualizowano i sformatowano bazę Multi Multi. Łącznie"
-          f" wierszy: {len(df_new)}"
+          f"Pomyślnie zaktualizowano bazę. Łącznie wierszy poprawnych:"
+          f" {len(df_new)}"
       )
     else:
-      print("Błąd: Nie udało się sparsować wierszy z pliku ml.txt")
+      print("Błąd: Brak wierszy.")
   else:
     print(f"Błąd pobierania: status {response.status_code}")
 except Exception as e:

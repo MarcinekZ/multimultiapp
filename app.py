@@ -67,14 +67,14 @@ if df is not None and not df.empty:
   # 2. USTAWIENIA ANALIZY (PRECYZYJNY PLUS / MINUS)
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
   st.caption(
-      "Wpisz dokładny zakres lub użyj przycisków plus/minus (1, 2, 3, 4, 5...):"
+      "Użyj przycisków plus/minus lub wpisz zakres (1, 2, 3, 4, 5...):"
   )
 
   zakres = st.number_input(
       "Zakres losowań:",
       min_value=1,
       max_value=total_draws,
-      value=min(20, total_draws),
+      value=20,
       step=1,
   )
 

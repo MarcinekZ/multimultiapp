@@ -38,11 +38,9 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. ARCHIWUM OSTATNICH LOSOWAŃ (PODZIELONE NA 2 LINIE PO 10 LICZB)
+  # 1. ARCHIWUM OSTATNICH LOSOWAŃ (2 linie po 10 liczb)
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
-  st.caption(
-      "Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania."
-  )
+  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
   recent_df = df.tail(5).iloc[::-1]
   for i in range(len(recent_df) - 1):
@@ -85,7 +83,6 @@ if df is not None and not df.empty:
       else:
         formatted_display.append(f"{val_str}")
 
-    # Dzielimy 20 liczb na dwie równe linie po 10, żeby idealnie mieściły się na telefonie
     line1 = " ".join(formatted_display[:10])
     line2 = " ".join(formatted_display[10:])
     st.code(f"{line1}\n{line2}", language=None)
@@ -120,20 +117,16 @@ if df is not None and not df.empty:
         label_visibility="collapsed",
     )
 
-  st.write(f"Wybrany zakres: **{int(zakres)}** losowań")
+  st.write(f"Wybrany zakres bazy: **{int(zakres)}** losowań")
 
   st.divider()
 
-  # 3. ANALIZA SESYJNA (14:00 i 22:00) Z OSOBNYMI SUWAKAMI 1-10
-  st.subheader(f"⏰ Analiza Sesyjna (Zakres bazy: {int(zakres)} losowań)")
-  st.caption(
-      "Każdy zakład posiada własny suwak (1–10 liczb). Trafienia w najnowszym"
-      " losowaniu oznaczono ✅"
-  )
-
+  # Pobieramy liczby z najnowszego losowania do weryfikacji trafień (✅)
   latest_draw = df.iloc[-1]
   latest_nums = {
-      str(v).replace(".0", "").strip()
+      f"{int(str(v).replace('.0', '').strip()):02d}"
+      if str(v).replace(".0", "").strip().isdigit()
+      else str(v).replace(".0", "").strip()
       for v in latest_draw.iloc[3:].values
       if pd.notna(v) and str(v).strip()
   }
@@ -151,82 +144,154 @@ if df is not None and not df.empty:
     return " ".join(res)
 
 
-  for session_time, session_label, icon in [
-      ("14:00", "Godzina 14:00", "☀️"),
-      ("22:00", "Godzina 22:00", "🌙"),
-  ]:
-    st.markdown(f"### {icon} {session_label}")
-
+  def get_session_data(session_time):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
+    if df_session.empty:
+      return [], []
+    all_session_nums = []
+    for row_vals in df_session.iloc[:, 3:].values:
+      for val in row_vals:
+        if pd.notna(val) and str(val).strip():
+          cleaned_v = str(val).replace(".0", "").strip()
+          if cleaned_v.isdigit():
+            all_session_nums.append(f"{int(cleaned_v):02d}")
 
-    if not df_session.empty:
-      all_session_nums = []
-      for row_vals in df_session.iloc[:, 3:].values:
-        for val in row_vals:
-          if pd.notna(val) and str(val).strip():
-            cleaned_v = str(val).replace(".0", "").strip()
-            if cleaned_v.isdigit():
-              all_session_nums.append(f"{int(cleaned_v):02d}")
+    counts = pd.Series(all_session_nums).value_counts()
+    even_counts = counts[
+        counts.index.map(lambda x: int(x) % 2 == 0 if x.isdigit() else False)
+    ]
+    odd_counts = counts[
+        counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
+    ]
+    return even_counts.index.tolist(), odd_counts.index.tolist()
 
-      counts = pd.Series(all_session_nums).value_counts()
 
-      even_counts = counts[
-          counts.index.map(lambda x: int(x) % 2 == 0 if x.isdigit() else False)
-      ]
-      odd_counts = counts[
-          counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
-      ]
+  # --- GODZINA 14:00 (TOP 10 Z TRAFIENIAMI ✅ BEZ SUWAKÓW) ---
+  st.subheader("☀️ Godzina 14:00")
+  even_14, odd_14 = get_session_data("14:00")
 
-      all_even = even_counts.index.tolist()
-      all_odd = odd_counts.index.tolist()
+  st.markdown("**Top 10 Parzyste:**")
+  top10_even_14 = even_14[:10]
+  st.code(
+      format_list(top10_even_14)
+      if top10_even_14
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
 
-      col1, col2 = st.columns(2)
+  st.markdown("**Top 10 Nieparzyste:**")
+  top10_odd_14 = odd_14[:10]
+  st.code(
+      format_list(top10_odd_14)
+      if top10_odd_14
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
 
-      with col1:
-        st.markdown("**Top Parzyste**")
-        limit_even = st.slider(
-            f"Parzyste {session_time}",
-            min_value=1,
-            max_value=10,
-            value=min(5, len(all_even)) if all_even else 1,
-            key=f"slider_even_{session_time}",
-            step=1,
-            label_visibility="collapsed",
-        )
-        selected_even = all_even[:limit_even]
-        st.code(
-            format_list(selected_even) if selected_even else "Brak danych",
-            language=None,
-        )
+  st.divider()
 
-      with col2:
-        st.markdown("**Top Nieparzyste**")
-        limit_odd = st.slider(
-            f"Nieparzyste {session_time}",
-            min_value=1,
-            max_value=10,
-            value=min(5, len(all_odd)) if all_odd else 1,
-            key=f"slider_odd_{session_time}",
-            step=1,
-            label_visibility="collapsed",
-        )
-        selected_odd = all_odd[:limit_odd]
-        st.code(
-            format_list(selected_odd) if selected_odd else "Brak danych",
-            language=None,
-        )
+  # --- GODZINA 22:00 (TOP 10 Z TRAFIENIAMI ✅ BEZ SUWAKÓW) ---
+  st.subheader("🌙 Godzina 22:00")
+  even_22, odd_22 = get_session_data("22:00")
 
-      # Rekomendowany zakład sesyjny
-      st.markdown(
-          f"🎯 **Rekomendowany Zakład Sesyjny ({session_time}):**"
-      )
-      rec_combo = sorted(selected_even + selected_odd, key=lambda x: int(x))
-      st.code(
-          format_list(rec_combo) if rec_combo else "Brak danych", language=None
-      )
-      st.divider()
+  st.markdown("**Top 10 Parzyste:**")
+  top10_even_22 = even_22[:10]
+  st.code(
+      format_list(top10_even_22)
+      if top10_even_22
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
 
-    else:
-      st.info(f"Brak losowań z godziny {session_time} w wybranym zakresie.")
+  st.markdown("**Top 10 Nieparzyste:**")
+  top10_odd_22 = odd_22[:10]
+  st.code(
+      format_list(top10_odd_22)
+      if top10_odd_22
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  st.divider()
+
+  # --- 4 REKOMENDOWANE ZAKŁADY Z SUWAKAMI (1-10) I TRAFIENIAMI ✅ ---
+  st.subheader("🎯 Rekomendowane Zakłady (4 zestawy)")
+  st.caption(
+      "Każdy zakład posiada osobny suwak od 1 do 10 liczb. Trafienia oznaczono"
+      " ✅"
+  )
+
+  # Rekomendowany Zakład 1: Parzyste 14:00
+  st.markdown("🎯 **1. Rekomendowany Zakład: Parzyste (14:00)**")
+  rec_lim_e14 = st.slider(
+      "Suwak Rec Parzyste 14:00",
+      1,
+      10,
+      min(5, len(even_14)) if even_14 else 5,
+      key="rec_lim_e14",
+      label_visibility="collapsed",
+  )
+  rec_sel_e14 = even_14[:rec_lim_e14]
+  st.code(
+      format_list(rec_sel_e14)
+      if rec_sel_e14
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  # Rekomendowany Zakład 2: Nieparzyste 14:00
+  st.markdown("🎯 **2. Rekomendowany Zakład: Nieparzyste (14:00)**")
+  rec_lim_o14 = st.slider(
+      "Suwak Rec Nieparzyste 14:00",
+      1,
+      10,
+      min(5, len(odd_14)) if odd_14 else 5,
+      key="rec_lim_o14",
+      label_visibility="collapsed",
+  )
+  rec_sel_o14 = odd_14[:rec_lim_o14]
+  st.code(
+      format_list(rec_sel_o14)
+      if rec_sel_o14
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  # Rekomendowany Zakład 3: Parzyste 22:00
+  st.markdown("🎯 **3. Rekomendowany Zakład: Parzyste (22:00)**")
+  rec_lim_e22 = st.slider(
+      "Suwak Rec Parzyste 22:00",
+      1,
+      10,
+      min(5, len(even_22)) if even_22 else 5,
+      key="rec_lim_e22",
+      label_visibility="collapsed",
+  )
+  rec_sel_e22 = even_22[:rec_lim_e22]
+  st.code(
+      format_list(rec_sel_e22)
+      if rec_sel_e22
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  # Rekomendowany Zakład 4: Nieparzyste 22:00
+  st.markdown("🎯 **4. Rekomendowany Zakład: Nieparzyste (22:00)**")
+  rec_lim_o22 = st.slider(
+      "Suwak Rec Nieparzyste 22:00",
+      1,
+      10,
+      min(5, len(odd_22)) if odd_22 else 5,
+      key="rec_lim_o22",
+      label_visibility="collapsed",
+  )
+  rec_sel_o22 = odd_22[:rec_lim_o22]
+  st.code(
+      format_list(rec_sel_o22)
+      if rec_sel_o22
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
 else:
   st.warning("Oczekiwanie na ładowanie bazy danych...")

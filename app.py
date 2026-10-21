@@ -38,9 +38,11 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. ARCHIWUM OSTATNICH LOSOWAŃ (PRZESKOKI)
+  # 1. ARCHIWUM OSTATNICH LOSOWAŃ (PODZIELONE NA 2 LINIE PO 10 LICZB)
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
-  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
+  st.caption(
+      "Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania."
+  )
 
   recent_df = df.tail(5).iloc[::-1]
   for i in range(len(recent_df) - 1):
@@ -83,55 +85,71 @@ if df is not None and not df.empty:
       else:
         formatted_display.append(f"{val_str}")
 
-    st.code(" ".join(formatted_display), language=None)
+    # Dzielimy 20 liczb na dwie równe linie po 10, żeby idealnie mieściły się na telefonie
+    line1 = " ".join(formatted_display[:10])
+    line2 = " ".join(formatted_display[10:])
+    st.code(f"{line1}\n{line2}", language=None)
 
   st.divider()
 
-  # 2. USTAWIENIA ANALIZY (KLASYCZNY SUWAK + PRZYCISKI - ORAZ +)
+  # 2. USTAWIENIA ANALIZY (POZIOMY UKŁAD: [-] [SUWAK] [+])
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   if "zakres" not in st.session_state:
     st.session_state["zakres"] = min(20, total_draws)
 
-  # Układ w kolumnach: [-] [ Suwak ] [+]
-  col_minus, col_slider, col_plus = st.columns([1, 6, 1])
+  col_minus, col_slider, col_plus = st.columns([1, 4, 1])
 
   with col_minus:
-    st.text("")
-    st.text("")
-    if st.button("➖", use_container_width=True):
+    if st.button("➖", use_container_width=True, key="main_minus"):
       if st.session_state["zakres"] > 1:
         st.session_state["zakres"] -= 1
 
   with col_plus:
-    st.text("")
-    st.text("")
-    if st.button("➕", use_container_width=True):
+    if st.button("➕", use_container_width=True, key="main_plus"):
       if st.session_state["zakres"] < total_draws:
         st.session_state["zakres"] += 1
 
   with col_slider:
     zakres = st.slider(
-        "Wybierz zakres analizowanych ostatnich losowań:",
+        "Zakres losowań:",
         min_value=1,
         max_value=total_draws,
         key="zakres",
         step=1,
+        label_visibility="collapsed",
     )
+
+  st.write(f"Wybrany zakres: **{int(zakres)}** losowań")
 
   st.divider()
 
-  # 3. TOP 10 SESYJNE ORAZ REKOMENDOWANE ZAKŁADY
-  st.subheader(f"⏰ Top 10 Sesyjne (Zakres: {int(zakres)} losowań)")
-  st.caption("Liczby trafione w najnowszym losowaniu oznaczono ikoną ✅")
+  # 3. ANALIZA SESYJNA (14:00 i 22:00) Z OSOBNYMI SUWAKAMI 1-10
+  st.subheader(f"⏰ Analiza Sesyjna (Zakres bazy: {int(zakres)} losowań)")
+  st.caption(
+      "Każdy zakład posiada własny suwak (1–10 liczb). Trafienia w najnowszym"
+      " losowaniu oznaczono ✅"
+  )
 
-  df_analyzed = df.tail(int(zakres))
   latest_draw = df.iloc[-1]
   latest_nums = {
       str(v).replace(".0", "").strip()
       for v in latest_draw.iloc[3:].values
       if pd.notna(v) and str(v).strip()
   }
+
+  df_analyzed = df.tail(int(zakres))
+
+
+  def format_list(num_list):
+    res = []
+    for n_str in num_list:
+      if n_str in latest_nums:
+        res.append(f"{n_str}✅")
+      else:
+        res.append(f"{n_str}")
+    return " ".join(res)
+
 
   for session_time, session_label, icon in [
       ("14:00", "Godzina 14:00", "☀️"),
@@ -159,55 +177,56 @@ if df is not None and not df.empty:
           counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
       ]
 
-      top_even = even_counts.head(10).index.tolist()
-      top_odd = odd_counts.head(10).index.tolist()
+      all_even = even_counts.index.tolist()
+      all_odd = odd_counts.index.tolist()
 
-      def format_top_list(num_list):
-        res = []
-        for n_str in num_list:
-          if n_str in latest_nums:
-            res.append(f"{n_str}✅")
-          else:
-            res.append(f"{n_str}")
-        return " ".join(res)
+      col1, col2 = st.columns(2)
 
-      st.markdown("**Top 10 Parzyste:**")
-      st.code(
-          format_top_list(top_even)
-          if top_even
-          else "Brak danych w wybranym zakresie"
-      )
+      with col1:
+        st.markdown("**Top Parzyste**")
+        limit_even = st.slider(
+            f"Parzyste {session_time}",
+            min_value=1,
+            max_value=10,
+            value=min(5, len(all_even)) if all_even else 1,
+            key=f"slider_even_{session_time}",
+            step=1,
+            label_visibility="collapsed",
+        )
+        selected_even = all_even[:limit_even]
+        st.code(
+            format_list(selected_even) if selected_even else "Brak danych",
+            language=None,
+        )
 
-      st.markdown("**Top 10 Nieparzyste:**")
-      st.code(
-          format_top_list(top_odd)
-          if top_odd
-          else "Brak danych w wybranym zakresie"
-      )
+      with col2:
+        st.markdown("**Top Nieparzyste**")
+        limit_odd = st.slider(
+            f"Nieparzyste {session_time}",
+            min_value=1,
+            max_value=10,
+            value=min(5, len(all_odd)) if all_odd else 1,
+            key=f"slider_odd_{session_time}",
+            step=1,
+            label_visibility="collapsed",
+        )
+        selected_odd = all_odd[:limit_odd]
+        st.code(
+            format_list(selected_odd) if selected_odd else "Brak danych",
+            language=None,
+        )
 
-      # REKOMENDOWANY ZAKŁAD SESYJNY
+      # Rekomendowany zakład sesyjny
       st.markdown(
-          "🎯 **Rekomendowany Zakład (Top 5 Parzyste + Top 5 Nieparzyste):**"
+          f"🎯 **Rekomendowany Zakład Sesyjny ({session_time}):**"
       )
-      rec_even = [n for n in top_even[:5]]
-      rec_odd = [n for n in top_odd[:5]]
-      recommended_combo = sorted(rec_even + rec_odd, key=lambda x: int(x))
-
-      rec_display = []
-      for n_str in recommended_combo:
-        if n_str in latest_nums:
-          rec_display.append(f"{n_str}✅")
-        else:
-          rec_display.append(n_str)
-
+      rec_combo = sorted(selected_even + selected_odd, key=lambda x: int(x))
       st.code(
-          " ".join(rec_display) if rec_display else "Brak danych", language=None
+          format_list(rec_combo) if rec_combo else "Brak danych", language=None
       )
+      st.divider()
 
     else:
-      st.info(
-          f"Brak losowań z godziny {session_time} w tym zakresie (zwiększ zakres,"
-          " aby objąć tę sesję)."
-      )
+      st.info(f"Brak losowań z godziny {session_time} w wybranym zakresie.")
 else:
   st.warning("Oczekiwanie na ładowanie bazy danych...")

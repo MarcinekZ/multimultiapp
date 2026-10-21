@@ -166,9 +166,11 @@ if df is not None and not df.empty:
     return even_counts.index.tolist(), odd_counts.index.tolist()
 
 
-  # --- GODZINA 14:00 (TOP 10 Z TRAFIENIAMI ✅ BEZ SUWAKÓW) ---
-  st.subheader("☀️ Godzina 14:00")
   even_14, odd_14 = get_session_data("14:00")
+  even_22, odd_22 = get_session_data("22:00")
+
+  # --- GODZINA 14:00 (CZYSTE TOP 10 PARZYSTE I NIEPARZYSTE Z ✅) ---
+  st.subheader("☀️ Godzina 14:00")
 
   st.markdown("**Top 10 Parzyste:**")
   top10_even_14 = even_14[:10]
@@ -190,9 +192,8 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- GODZINA 22:00 (TOP 10 Z TRAFIENIAMI ✅ BEZ SUWAKÓW) ---
+  # --- GODZINA 22:00 (CZYSTE TOP 10 PARZYSTE I NIEPARZYSTE Z ✅) ---
   st.subheader("🌙 Godzina 22:00")
-  even_22, odd_22 = get_session_data("22:00")
 
   st.markdown("**Top 10 Parzyste:**")
   top10_even_22 = even_22[:10]
@@ -214,7 +215,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4 REKOMENDOWANE ZAKŁADY Z SUWAKAMI (1-10) I TRAFIENIAMI ✅ ---
+  # --- 4 REKOMENDOWANE ZAKŁADY Z OSOBNYMI SUWAKAMI (1-10) I TRAFIENIAMI ✅ ---
   st.subheader("🎯 Rekomendowane Zakłady (4 zestawy)")
   st.caption(
       "Każdy zakład posiada osobny suwak od 1 do 10 liczb. Trafienia oznaczono"

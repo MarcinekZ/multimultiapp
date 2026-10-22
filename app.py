@@ -38,35 +38,99 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. USTAWIENIA ANALIZY (POZIOMY UKŁAD: [-] [SUWAK] [+])
+  # 1. ARCHIWUM OSTATNICH LOSOWAŃ NA SAMEJ GÓRZE
+  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
+  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
+
+  recent_df = df.tail(5).iloc[::-1]
+  for i in range(len(recent_df) - 1):
+    curr = recent_df.iloc[i]
+    prev = recent_df.iloc[i + 1]
+
+    curr_nums = [
+        val
+        for val in curr.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+    prev_nums = [
+        val
+        for val in prev.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+
+    curr_set = set(curr_nums)
+    prev_set = set(prev_nums)
+    repeated = curr_set.intersection(prev_set)
+
+    draw_id = curr["ID"]
+    date_str = curr["Data"]
+    time_str = curr["Godzina"]
+
+    st.markdown(
+        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
+    )
+
+    formatted_display = []
+    for val in curr_nums:
+      val_clean = str(val).replace(".0", "").strip()
+      if val_clean.isdigit():
+        val_str = f"{int(val_clean):02d}"
+      else:
+        val_str = val_clean
+
+      if val in repeated or val_clean in repeated:
+        formatted_display.append(f"🔄{val_str}")
+      else:
+        formatted_display.append(f"{val_str}")
+
+    line1 = " ".join(formatted_display[:10])
+    line2 = " ".join(formatted_display[10:])
+    st.code(f"{line1}\n{line2}", language=None)
+
+  st.divider()
+
+  # 2. USTAWIENIA ANALIZY (SELECT_SLIDER Z PRZYCISKAMI [-] / [+])
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
-  if "zakres" not in st.session_state:
-    st.session_state["zakres"] = min(20, total_draws)
+  raw_options = [1, 5, 10, 15, 20, 50, 100, 200, total_draws]
+  options = sorted(list(set([opt for opt in raw_options if opt <= total_draws])))
+  if total_draws not in options:
+    options.append(total_draws)
+
+  if "zakres_val" not in st.session_state:
+    default_val = 20 if 20 in options else options[-1]
+    st.session_state["zakres_val"] = default_val
+  else:
+    if st.session_state["zakres_val"] not in options:
+      st.session_state["zakres_val"] = options[-1]
 
   col_minus, col_slider, col_plus = st.columns([1, 4, 1])
 
   with col_minus:
     if st.button("➖", use_container_width=True, key="main_minus"):
-      if st.session_state["zakres"] > 1:
-        st.session_state["zakres"] -= 1
+      current_idx = options.index(st.session_state["zakres_val"])
+      if current_idx > 0:
+        st.session_state["zakres_val"] = options[current_idx - 1]
 
   with col_plus:
     if st.button("➕", use_container_width=True, key="main_plus"):
-      if st.session_state["zakres"] < total_draws:
-        st.session_state["zakres"] += 1
+      current_idx = options.index(st.session_state["zakres_val"])
+      if current_idx < len(options) - 1:
+        st.session_state["zakres_val"] = options[current_idx + 1]
 
   with col_slider:
-    zakres = st.slider(
+    zakres = st.select_slider(
         "Zakres losowań:",
-        min_value=1,
-        max_value=total_draws,
-        key="zakres",
-        step=1,
+        options=options,
+        value=st.session_state["zakres_val"],
+        format_func=lambda x: "Wszystkie losowania"
+        if x == total_draws
+        else str(x),
+        key="zakres_val",
         label_visibility="collapsed",
     )
 
-  st.write(f"Wybrany zakres bazy: **{int(zakres)}** losowań")
+  st.write(f"Wybrany zakres bazy: **{zakres}** losowań")
 
   st.divider()
 
@@ -281,54 +345,13 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 📌 ARCHIWUM OSTATNICH LOSOWAŃ NA SAMYM DOLE ---
-  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
-  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
-
-  recent_df = df.tail(5).iloc[::-1]
-  for i in range(len(recent_df) - 1):
-    curr = recent_df.iloc[i]
-    prev = recent_df.iloc[i + 1]
-
-    curr_nums = [
-        val
-        for val in curr.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-    prev_nums = [
-        val
-        for val in prev.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-
-    curr_set = set(curr_nums)
-    prev_set = set(prev_nums)
-    repeated = curr_set.intersection(prev_set)
-
-    draw_id = curr["ID"]
-    date_str = curr["Data"]
-    time_str = curr["Godzina"]
-
-    st.markdown(
-        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
-    )
-
-    formatted_display = []
-    for val in curr_nums:
-      val_clean = str(val).replace(".0", "").strip()
-      if val_clean.isdigit():
-        val_str = f"{int(val_clean):02d}"
-      else:
-        val_str = val_clean
-
-      if val in repeated or val_clean in repeated:
-        formatted_display.append(f"🔄{val_str}")
-      else:
-        formatted_display.append(f"{val_str}")
-
-    line1 = " ".join(formatted_display[:10])
-    line2 = " ".join(formatted_display[10:])
-    st.code(f"{line1}\n{line2}", language=None)
+  # --- 📊 CAŁA BAZA WSZYSTKICH LOSOWAŃ NA SAMYM DOLE ---
+  st.subheader("📊 Pełna Baza Wszystkich Losowań")
+  st.caption(
+      "Poniżej znajduje się kompletny zestaw historycznych losowań z bazy"
+      " danych."
+  )
+  st.dataframe(df, use_container_width=True)
 
 else:
   st.warning("Oczekiwanie na ładowanie bazy danych...")

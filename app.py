@@ -194,7 +194,10 @@ if df is not None and not df.empty:
           if cleaned_v.isdigit():
             num_int = int(cleaned_v)
             is_even = num_int % 2 == 0
-            if (parity_type == "even" and is_even) or (
+            if parity_type == "mixed":
+              draw_nums.append(f"{num_int:02d}")
+              all_session_nums.append(f"{num_int:02d}")
+            elif (parity_type == "even" and is_even) or (
                 parity_type == "odd" and not is_even
             ):
               draw_nums.append(f"{num_int:02d}")
@@ -260,17 +263,17 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4 REKOMENDOWANE ZAKŁADY (ANALIZA KO-OKURENCJI) ---
-  st.subheader("🎯 Rekomendowane Zakłady (Analiza Par i Współwystępowania)")
+  # --- 6 REKOMENDOWANYCH ZAKŁADÓW (W TYM MIESZANE) ---
+  st.subheader("🎯 Rekomendowane Zakłady (Analiza Ko-okurencji)")
   st.caption(
       "Zakłady przeliczane na podstawie prawdopodobieństwa współwystępowania."
       " Każdy zestaw ma suwak (1–10). Trafienia oznaczono ✅"
   )
 
-  # Rekomendowany Zakład 1: Parzyste 14:00
+  # 1. Parzyste 14:00
   st.markdown("🎯 **1. Rekomendowany Zakład: Parzyste (14:00)**")
   rec_lim_e14 = st.slider(
-      "Suwak Rec Parzyste 14:00",
+      "Rec Parzyste 14:00",
       1,
       10,
       5,
@@ -287,10 +290,10 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # Rekomendowany Zakład 2: Nieparzyste 14:00
+  # 2. Nieparzyste 14:00
   st.markdown("🎯 **2. Rekomendowany Zakład: Nieparzyste (14:00)**")
   rec_lim_o14 = st.slider(
-      "Suwak Rec Nieparzyste 14:00",
+      "Rec Nieparzyste 14:00",
       1,
       10,
       5,
@@ -305,10 +308,30 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # Rekomendowany Zakład 3: Parzyste 22:00
-  st.markdown("🎯 **3. Rekomendowany Zakład: Parzyste (22:00)**")
+  # 3. Mieszany 14:00 (NOWY)
+  st.markdown("🎯 **3. Rekomendowany Zakład: Mieszany (14:00)**")
+  rec_lim_m14 = st.slider(
+      "Rec Mieszany 14:00",
+      1,
+      10,
+      5,
+      key="rec_lim_m14",
+      label_visibility="collapsed",
+  )
+  rec_sel_m14 = get_cooccurrence_recommendations(
+      "14:00", "mixed", rec_lim_m14
+  )
+  st.code(
+      format_list(rec_sel_m14)
+      if rec_sel_m14
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  # 4. Parzyste 22:00
+  st.markdown("🎯 **4. Rekomendowany Zakład: Parzyste (22:00)**")
   rec_lim_e22 = st.slider(
-      "Suwak Rec Parzyste 22:00",
+      "Rec Parzyste 22:00",
       1,
       10,
       5,
@@ -325,10 +348,10 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # Rekomendowany Zakład 4: Nieparzyste 22:00
-  st.markdown("🎯 **4. Rekomendowany Zakład: Nieparzyste (22:00)**")
+  # 5. Nieparzyste 22:00
+  st.markdown("🎯 **5. Rekomendowany Zakład: Nieparzyste (22:00)**")
   rec_lim_o22 = st.slider(
-      "Suwak Rec Nieparzyste 22:00",
+      "Rec Nieparzyste 22:00",
       1,
       10,
       5,
@@ -339,6 +362,26 @@ if df is not None and not df.empty:
   st.code(
       format_list(rec_sel_o22)
       if rec_sel_o22
+      else "Brak danych w wybranym zakresie",
+      language=None,
+  )
+
+  # 6. Mieszany 22:00 (NOWY)
+  st.markdown("🎯 **6. Rekomendowany Zakład: Mieszany (22:00)**")
+  rec_lim_m22 = st.slider(
+      "Rec Mieszany 22:00",
+      1,
+      10,
+      5,
+      key="rec_lim_m22",
+      label_visibility="collapsed",
+  )
+  rec_sel_m22 = get_cooccurrence_recommendations(
+      "22:00", "mixed", rec_lim_m22
+  )
+  st.code(
+      format_list(rec_sel_m22)
+      if rec_sel_m22
       else "Brak danych w wybranym zakresie",
       language=None,
   )

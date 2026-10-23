@@ -1,3 +1,4 @@
+import random
 import pandas as pd
 import requests
 import streamlit as st
@@ -6,13 +7,22 @@ st.set_page_config(
     page_title="Multi Multi Analytics PWA", page_icon="🎯", layout="wide"
 )
 
-FILE_NAME = "multi_multi (10).csv"
+FILE_NAME = "multi_multi (11.csv"  # lub (10).csv w zależności od pliku bazy
 
 
 @st.cache_data(ttl=60)
 def load_data():
   try:
-    df = pd.read_csv(FILE_NAME, header=None)
+    # Próbujemy załadować plik bazy (dostosuj nazwę jeśli potrzeba)
+    for fname in ["multi_multi (11).csv", "multi_multi (10).csv"]:
+      try:
+        df = pd.read_csv(fname, header=None)
+        break
+      except FileNotFoundError:
+        continue
+    else:
+      return None
+
     num_cols = df.shape[1]
     cols = ["ID", "Data", "Godzina"] + [
         f"L{i}" for i in range(1, num_cols - 2)
@@ -134,7 +144,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # Pobieramy liczby z najnowszego losowania do weryfikacji trafień (✅)
+  # Pobieramy liczby z najnowszego losowania TYLKO do historycznej weryfikacji Top 10
   latest_draw = df.iloc[-1]
   latest_nums = {
       f"{int(str(v).replace('.0', '').strip()):02d}"
@@ -147,13 +157,24 @@ if df is not None and not df.empty:
   df_analyzed = df.tail(int(zakres))
 
 
-  def format_list(num_list):
+  def format_top10_list(num_list):
     res = []
     for n_str in num_list:
       if n_str in latest_nums:
         res.append(f"{n_str}✅")
       else:
         res.append(f"{n_str}")
+    return " ".join(res)
+
+
+  def format_clean_list(num_list):
+    # Czysta lista bez ptaszków dla przyszłych zakładów
+    res = []
+    for n_str in num_list:
+      if n_str.isdigit():
+        res.append(f"{int(n_str):02d}")
+      else:
+        res.append(n_str)
     return " ".join(res)
 
 
@@ -179,7 +200,7 @@ if df is not None and not df.empty:
     return even_counts.head(10).index.tolist(), odd_counts.head(10).index.tolist()
 
 
-  def get_cooccurrence_recommendations(session_time, parity_type, limit):
+  def get_cooccurrence_recommendations(session_time, parity_type, limit, seed):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
       return []
@@ -223,167 +244,126 @@ if df is not None and not df.empty:
     sorted_cands = sorted(
         co_scores.keys(), key=lambda x: co_scores[x], reverse=True
     )
-    return sorted_cands[:limit]
+
+    # Bierzemy pulę najlepszych i generujemy zestaw
+    pool = sorted_cands[: max(15, limit * 2)]
+    rng = random.Random(seed)
+    if len(pool) > limit:
+      # Losujemy z zachowaniem preferencji wagowych lub bierzemy top z lekkim przemieszaniem przy ponownym kliknięciu
+      selected = rng.sample(pool, min(limit, len(pool)))
+      selected = sorted(selected, key=lambda x: int(x))
+    else:
+      selected = sorted(pool[:limit], key=lambda x: int(x))
+
+    return selected
 
 
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- GODZINA 14:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ) ---
-  st.subheader("☀️ Godzina 14:00")
+  # --- GODZINA 14:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ Z WERYFIKACJĄ HISTORYCZNĄ) ---
+  st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   st.markdown("**Top 10 Parzyste:**")
   st.code(
-      format_list(even_14) if even_14 else "Brak danych w wybranym zakresie",
+      format_top10_list(even_14)
+      if even_14
+      else "Brak danych w wybranym zakresie",
       language=None,
   )
 
   st.markdown("**Top 10 Nieparzyste:**")
   st.code(
-      format_list(odd_14) if odd_14 else "Brak danych w wybranym zakresie",
+      format_top10_list(odd_14)
+      if odd_14
+      else "Brak danych w wybranym zakresie",
       language=None,
   )
 
   st.divider()
 
-  # --- GODZINA 22:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ) ---
-  st.subheader("🌙 Godzina 22:00")
+  # --- GODZINA 22:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ Z WERYFIKACJĄ HISTORYCZNĄ) ---
+  st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   st.markdown("**Top 10 Parzyste:**")
   st.code(
-      format_list(even_22) if even_22 else "Brak danych w wybranym zakresie",
+      format_top10_list(even_22)
+      if even_22
+      else "Brak danych w wybranym zakresie",
       language=None,
   )
 
   st.markdown("**Top 10 Nieparzyste:**")
   st.code(
-      format_list(odd_22) if odd_22 else "Brak danych w wybranym zakresie",
+      format_top10_list(odd_22)
+      if odd_22
+      else "Brak danych w wybranym zakresie",
       language=None,
   )
 
   st.divider()
 
-  # --- 6 REKOMENDOWANYCH ZAKŁADÓW (W TYM MIESZANE) ---
-  st.subheader("🎯 Rekomendowane Zakłady (Analiza Ko-okurencji)")
+  # --- 6 REKOMENDOWANYCH ZAKŁADÓW NA PRZYSZŁE LOSOWANIE (Z PRZYCISKAMI GENEROWANIA) ---
+  st.subheader(
+      "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
+  )
   st.caption(
-      "Zakłady przeliczane na podstawie prawdopodobieństwa współwystępowania."
-      " Każdy zestaw ma suwak (1–10). Trafienia oznaczono ✅"
+      "Kliknij „🎲 Generuj zakład”, aby utworzyć czysty zestaw liczb do"
+      " obstawienia."
   )
 
-  # 1. Parzyste 14:00
-  st.markdown("🎯 **1. Rekomendowany Zakład: Parzyste (14:00)**")
-  rec_lim_e14 = st.slider(
-      "Rec Parzyste 14:00",
-      1,
-      10,
-      5,
-      key="rec_lim_e14",
-      label_visibility="collapsed",
+
+  def render_generator_section(title, session_time, parity_type, key_prefix):
+    st.markdown(f"🎯 **{title}**")
+
+    col_btn, col_slider = st.columns([1, 3])
+    seed_key = f"seed_{key_prefix}"
+    if seed_key not in st.session_state:
+      st.session_state[seed_key] = 42
+
+    with col_btn:
+      if st.button("🎲 Generuj", key=f"btn_{key_prefix}", use_container_width=True):
+        st.session_state[seed_key] = random.randint(1, 10000)
+
+    with col_slider:
+      limit = st.slider(
+          "Liczba liczb",
+          1,
+          10,
+          5,
+          key=f"slider_{key_prefix}",
+          label_visibility="collapsed",
+      )
+
+    generated_nums = get_cooccurrence_recommendations(
+        session_time, parity_type, limit, st.session_state[seed_key]
+    )
+    st.code(
+        format_clean_list(generated_nums)
+        if generated_nums
+        else "Brak danych w wybranym zakresie",
+        language=None,
+    )
+
+
+  render_generator_section(
+      "Rekomendowany Zakład: Parzyste (14:00)", "14:00", "even", "e14"
   )
-  rec_sel_e14 = get_cooccurrence_recommendations(
-      "14:00", "even", rec_lim_e14
+  render_generator_section(
+      "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14"
   )
-  st.code(
-      format_list(rec_sel_e14)
-      if rec_sel_e14
-      else "Brak danych w wybranym zakresie",
-      language=None,
+  render_generator_section(
+      "Rekomendowany Zakład: Mieszany (14:00)", "14:00", "mixed", "m14"
   )
 
-  # 2. Nieparzyste 14:00
-  st.markdown("🎯 **2. Rekomendowany Zakład: Nieparzyste (14:00)**")
-  rec_lim_o14 = st.slider(
-      "Rec Nieparzyste 14:00",
-      1,
-      10,
-      5,
-      key="rec_lim_o14",
-      label_visibility="collapsed",
+  render_generator_section(
+      "Rekomendowany Zakład: Parzyste (22:00)", "22:00", "even", "e22"
   )
-  rec_sel_o14 = get_cooccurrence_recommendations("14:00", "odd", rec_lim_o14)
-  st.code(
-      format_list(rec_sel_o14)
-      if rec_sel_o14
-      else "Brak danych w wybranym zakresie",
-      language=None,
+  render_generator_section(
+      "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22"
   )
-
-  # 3. Mieszany 14:00 (NOWY)
-  st.markdown("🎯 **3. Rekomendowany Zakład: Mieszany (14:00)**")
-  rec_lim_m14 = st.slider(
-      "Rec Mieszany 14:00",
-      1,
-      10,
-      5,
-      key="rec_lim_m14",
-      label_visibility="collapsed",
-  )
-  rec_sel_m14 = get_cooccurrence_recommendations(
-      "14:00", "mixed", rec_lim_m14
-  )
-  st.code(
-      format_list(rec_sel_m14)
-      if rec_sel_m14
-      else "Brak danych w wybranym zakresie",
-      language=None,
-  )
-
-  # 4. Parzyste 22:00
-  st.markdown("🎯 **4. Rekomendowany Zakład: Parzyste (22:00)**")
-  rec_lim_e22 = st.slider(
-      "Rec Parzyste 22:00",
-      1,
-      10,
-      5,
-      key="rec_lim_e22",
-      label_visibility="collapsed",
-  )
-  rec_sel_e22 = get_cooccurrence_recommendations(
-      "22:00", "even", rec_lim_e22
-  )
-  st.code(
-      format_list(rec_sel_e22)
-      if rec_sel_e22
-      else "Brak danych w wybranym zakresie",
-      language=None,
-  )
-
-  # 5. Nieparzyste 22:00
-  st.markdown("🎯 **5. Rekomendowany Zakład: Nieparzyste (22:00)**")
-  rec_lim_o22 = st.slider(
-      "Rec Nieparzyste 22:00",
-      1,
-      10,
-      5,
-      key="rec_lim_o22",
-      label_visibility="collapsed",
-  )
-  rec_sel_o22 = get_cooccurrence_recommendations("22:00", "odd", rec_lim_o22)
-  st.code(
-      format_list(rec_sel_o22)
-      if rec_sel_o22
-      else "Brak danych w wybranym zakresie",
-      language=None,
-  )
-
-  # 6. Mieszany 22:00 (NOWY)
-  st.markdown("🎯 **6. Rekomendowany Zakład: Mieszany (22:00)**")
-  rec_lim_m22 = st.slider(
-      "Rec Mieszany 22:00",
-      1,
-      10,
-      5,
-      key="rec_lim_m22",
-      label_visibility="collapsed",
-  )
-  rec_sel_m22 = get_cooccurrence_recommendations(
-      "22:00", "mixed", rec_lim_m22
-  )
-  st.code(
-      format_list(rec_sel_m22)
-      if rec_sel_m22
-      else "Brak danych w wybranym zakresie",
-      language=None,
+  render_generator_section(
+      "Rekomendowany Zakład: Mieszany (22:00)", "22:00", "mixed", "m22"
   )
 
   st.divider()

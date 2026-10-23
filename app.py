@@ -1,3 +1,4 @@
+import math
 import random
 import pandas as pd
 import requests
@@ -7,14 +8,15 @@ st.set_page_config(
     page_title="Multi Multi Analytics PWA", page_icon="🎯", layout="wide"
 )
 
-FILE_NAME = "multi_multi (11.csv"  # lub (10).csv w zależności od pliku bazy
-
 
 @st.cache_data(ttl=60)
 def load_data():
   try:
-    # Próbujemy załadować plik bazy (dostosuj nazwę jeśli potrzeba)
-    for fname in ["multi_multi (11).csv", "multi_multi (10).csv"]:
+    for fname in [
+        "multi_multi (11).csv",
+        "multi_multi (10).csv",
+        "multi_multi.csv",
+    ]:
       try:
         df = pd.read_csv(fname, header=None)
         break
@@ -48,7 +50,7 @@ st.title("📱 Mobilny Panel Analityczny Ekipy")
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # 1. ARCHIWUM OSTATNICH LOSOWAŃ NA SAMEJ GÓRZE
+  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ NA SAMEJ GÓRZE ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -99,7 +101,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # 2. USTAWIENIA ANALIZY (SELECT_SLIDER Z PRZYCISKAMI [-] / [+])
+  # --- 2. USTAWIENIA ANALIZY (SELECT_SLIDER Z PRZYCISKAMI [-] / [+]) ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   raw_options = [1, 5, 10, 15, 20, 50, 100, 200, total_draws]
@@ -144,7 +146,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # Pobieramy liczby z najnowszego losowania TYLKO do historycznej weryfikacji Top 10
+  # Weryfikacja historyczna dla Top 10
   latest_draw = df.iloc[-1]
   latest_nums = {
       f"{int(str(v).replace('.0', '').strip()):02d}"
@@ -168,7 +170,6 @@ if df is not None and not df.empty:
 
 
   def format_clean_list(num_list):
-    # Czysta lista bez ptaszków dla przyszłych zakładów
     res = []
     for n_str in num_list:
       if n_str.isdigit():
@@ -214,15 +215,8 @@ if df is not None and not df.empty:
           cleaned_v = str(val).replace(".0", "").strip()
           if cleaned_v.isdigit():
             num_int = int(cleaned_v)
-            is_even = num_int % 2 == 0
-            if parity_type == "mixed":
-              draw_nums.append(f"{num_int:02d}")
-              all_session_nums.append(f"{num_int:02d}")
-            elif (parity_type == "even" and is_even) or (
-                parity_type == "odd" and not is_even
-            ):
-              draw_nums.append(f"{num_int:02d}")
-              all_session_nums.append(f"{num_int:02d}")
+            draw_nums.append(f"{num_int:02d}")
+            all_session_nums.append(f"{num_int:02d}")
       if draw_nums:
         draws_lists.append(set(draw_nums))
 
@@ -232,36 +226,79 @@ if df is not None and not df.empty:
     counts = pd.Series(all_session_nums).value_counts()
     top_frequent = counts.head(10).index.tolist()
 
-    co_scores = {}
+    # Wyliczanie punktacji ko-okurencji dla liczb parzystych i nieparzystych
+    even_cands = {}
+    odd_cands = {}
+
     for cand in counts.index.tolist():
       base_freq = counts[cand]
       co_occur = 0
       for d_set in draws_lists:
         if cand in d_set:
           co_occur += len(d_set.intersection(top_frequent))
-      co_scores[cand] = base_freq * 1.0 + co_occur * 2.5
+      score = base_freq * 1.0 + co_occur * 2.5
 
-    sorted_cands = sorted(
-        co_scores.keys(), key=lambda x: co_scores[x], reverse=True
+      if int(cand) % 2 == 0:
+        even_cands[cand] = score
+      else:
+        odd_cands[cand] = score
+
+    sorted_even = sorted(
+        even_cands.keys(), key=lambda x: even_cands[x], reverse=True
+    )
+    sorted_odd = sorted(
+        odd_cands.keys(), key=lambda x: odd_cands[x], reverse=True
     )
 
-    # Bierzemy pulę najlepszych i generujemy zestaw
-    pool = sorted_cands[: max(15, limit * 2)]
     rng = random.Random(seed)
-    if len(pool) > limit:
-      # Losujemy z zachowaniem preferencji wagowych lub bierzemy top z lekkim przemieszaniem przy ponownym kliknięciu
-      selected = rng.sample(pool, min(limit, len(pool)))
-      selected = sorted(selected, key=lambda x: int(x))
-    else:
-      selected = sorted(pool[:limit], key=lambda x: int(x))
 
-    return selected
+    if parity_type == "even":
+      pool = sorted_even[: max(15, limit * 2)]
+      selected = (
+          rng.sample(pool, min(limit, len(pool)))
+          if len(pool) > limit
+          else pool[:limit]
+      )
+    elif parity_type == "odd":
+      pool = sorted_odd[: max(15, limit * 2)]
+      selected = (
+          rng.sample(pool, min(limit, len(pool)))
+          if len(pool) > limit
+          else pool[:limit]
+      )
+    else:  # mieszany - inteligentne proporcje oparte na analizie bazy
+      if session_time == "14:00":
+        # 14:00 - Proporcja 50 / 50
+        num_even = math.ceil(limit / 2.0)
+        num_odd = limit - num_even
+      else:
+        # 22:00 - Wyraźna przewaga liczb parzystych (historyczny bilans 51.65% parzystych)
+        num_even = math.ceil(limit * 0.52)
+        num_odd = limit - num_even
+
+      pool_e = sorted_even[: max(10, num_even * 2)]
+      pool_o = sorted_odd[: max(10, num_odd * 2)]
+
+      sel_e = (
+          rng.sample(pool_e, min(num_even, len(pool_e)))
+          if len(pool_e) > num_even
+          else pool_e[:num_even]
+      )
+      sel_o = (
+          rng.sample(pool_o, min(num_odd, len(pool_o)))
+          if len(pool_o) > num_odd
+          else pool_o[:num_odd]
+      )
+
+      selected = sel_e + sel_o
+
+    return sorted(selected, key=lambda x: int(x))
 
 
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- GODZINA 14:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ Z WERYFIKACJĄ HISTORYCZNĄ) ---
+  # --- 3. TOP 10 CZYSTA CZĘSTOTLIWOŚĆ ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   st.markdown("**Top 10 Parzyste:**")
@@ -282,7 +319,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- GODZINA 22:00 (TOP 10 CZYSTA CZĘSTOTLIWOŚĆ Z WERYFIKACJĄ HISTORYCZNĄ) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   st.markdown("**Top 10 Parzyste:**")
@@ -303,13 +339,13 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 6 REKOMENDOWANYCH ZAKŁADÓW NA PRZYSZŁE LOSOWANIE (Z PRZYCISKAMI GENEROWANIA) ---
+  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE ---
   st.subheader(
       "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
   )
   st.caption(
-      "Kliknij „🎲 Generuj zakład”, aby utworzyć czysty zestaw liczb do"
-      " obstawienia."
+      "Zestawy mieszane automatycznie bilansują proporcje parzystych i"
+      " nieparzystych na podstawie bazy danych."
   )
 
 
@@ -343,7 +379,7 @@ if df is not None and not df.empty:
         if generated_nums
         else "Brak danych w wybranym zakresie",
         language=None,
-    )
+  )
 
 
   render_generator_section(
@@ -353,7 +389,10 @@ if df is not None and not df.empty:
       "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14"
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (14:00)", "14:00", "mixed", "m14"
+      "Rekomendowany Zakład: Mieszany (14:00) [Proporcja 50/50]",
+      "14:00",
+      "mixed",
+      "m14",
   )
 
   render_generator_section(
@@ -363,12 +402,15 @@ if df is not None and not df.empty:
       "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22"
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (22:00)", "22:00", "mixed", "m22"
+      "Rekomendowany Zakład: Mieszany (22:00) [Proporcja 52% P / 48% N]",
+      "22:00",
+      "mixed",
+      "m22",
   )
 
   st.divider()
 
-  # --- 📊 CAŁA BAZA WSZYSTKICH LOSOWAŃ NA SAMYM DOLE ---
+  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ NA SAMYM DOLE ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   st.caption(
       "Poniżej znajduje się kompletny zestaw historycznych losowań z bazy"

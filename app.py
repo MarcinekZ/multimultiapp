@@ -226,7 +226,6 @@ if df is not None and not df.empty:
     counts = pd.Series(all_session_nums).value_counts()
     top_frequent = counts.head(10).index.tolist()
 
-    # Wyliczanie punktacji ko-okurencji dla liczb parzystych i nieparzystych
     even_cands = {}
     odd_cands = {}
 
@@ -266,13 +265,12 @@ if df is not None and not df.empty:
           if len(pool) > limit
           else pool[:limit]
       )
-    else:  # mieszany - inteligentne proporcje oparte na analizie bazy
+    else:  # mieszany - proporcje oparte na analizie bazy
       if session_time == "14:00":
-        # 14:00 - Proporcja 50 / 50
         num_even = math.ceil(limit / 2.0)
         num_odd = limit - num_even
       else:
-        # 22:00 - Wyraźna przewaga liczb parzystych (historyczny bilans 51.65% parzystych)
+        # 22:00 - Przewaga parzystych (~52%)
         num_even = math.ceil(limit * 0.52)
         num_odd = limit - num_even
 
@@ -298,8 +296,9 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- 3. TOP 10 CZYSTA CZĘSTOTLIWOŚĆ ---
+  # --- 3. TOP 10 Z OZNACZENIAMI PRIORYTETÓW (✅) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
+  st.caption("ℹ️ Bilans 14:00: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
 
   st.markdown("**Top 10 Parzyste:**")
   st.code(
@@ -320,8 +319,12 @@ if df is not None and not df.empty:
   st.divider()
 
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
+  st.caption(
+      "ℹ️ Bilans 22:00: Wyraźny priorytet i przewaga liczb **Parzystych**"
+      " (~52%)"
+  )
 
-  st.markdown("**Top 10 Parzyste:**")
+  st.markdown("**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**")
   st.code(
       format_top10_list(even_22)
       if even_22
@@ -339,18 +342,21 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE ---
+  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE Z OZNACZENIAMI ✅ ---
   st.subheader(
       "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
   )
   st.caption(
-      "Zestawy mieszane automatycznie bilansują proporcje parzystych i"
-      " nieparzystych na podstawie bazy danych."
+      "Oznaczenia ✅ wskazują rekomendowany priorytet parzystości wynikający z"
+      " bazy historycznej."
   )
 
 
-  def render_generator_section(title, session_time, parity_type, key_prefix):
-    st.markdown(f"🎯 **{title}**")
+  def render_generator_section(
+      title, session_time, parity_type, key_prefix, has_priority=False
+  ):
+    priority_badge = " ✅ [Rekomendowany Priorytet]" if has_priority else ""
+    st.markdown(f"🎯 **{title}{priority_badge}**")
 
     col_btn, col_slider = st.columns([1, 3])
     seed_key = f"seed_{key_prefix}"
@@ -379,33 +385,41 @@ if df is not None and not df.empty:
         if generated_nums
         else "Brak danych w wybranym zakresie",
         language=None,
-  )
+    )
 
 
   render_generator_section(
-      "Rekomendowany Zakład: Parzyste (14:00)", "14:00", "even", "e14"
+      "Rekomendowany Zakład: Parzyste (14:00)", "14:00", "even", "e14", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14"
+      "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (14:00) [Proporcja 50/50]",
+      "Rekomendowany Zakład: Mieszany (14:00) [Zrównoważony 50/50]",
       "14:00",
       "mixed",
       "m14",
+      True,
   )
 
+  # O 22:00 parzyste mają historyczny priorytet
   render_generator_section(
-      "Rekomendowany Zakład: Parzyste (22:00)", "22:00", "even", "e22"
+      "Rekomendowany Zakład: Parzyste (22:00)",
+      "22:00",
+      "even",
+      "e22",
+      True,
   )
   render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22"
+      "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (22:00) [Proporcja 52% P / 48% N]",
+      "Rekomendowany Zakład: Mieszany (22:00) [Zbalansowany z przewagą"
+      " parzystych]",
       "22:00",
       "mixed",
       "m22",
+      True,
   )
 
   st.divider()

@@ -101,20 +101,15 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. USTAWIENIA ANALIZY (PRZESKOKI PALCEM + PRECYZYJNA REGULACJA CO 1) ---
+  # --- 2. USTAWIENIA ANALIZY (PŁYNNY SELECT_SLIDER + PRECYZYJNE [+] / [-]) ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
-  # Definiujemy progi dla płynnego przesuwania palcem na telefonie
   preset_steps = [
       1,
-      2,
-      3,
-      4,
       5,
       10,
       15,
       20,
-      25,
       30,
       40,
       50,
@@ -129,7 +124,9 @@ if df is not None and not df.empty:
     preset_steps.append(total_draws)
 
   if "zakres_val" not in st.session_state:
-    st.session_state["zakres_val"] = 20 if 20 in preset_steps else preset_steps[0]
+    st.session_state["zakres_val"] = (
+        20 if 20 in preset_steps else preset_steps[0]
+    )
 
   col_minus, col_slider, col_plus = st.columns([1, 4, 1])
 
@@ -137,36 +134,28 @@ if df is not None and not df.empty:
     if st.button("➖", use_container_width=True, key="main_minus"):
       if st.session_state["zakres_val"] > 1:
         st.session_state["zakres_val"] -= 1
+        st.rerun()
 
   with col_plus:
     if st.button("➕", use_container_width=True, key="main_plus"):
       if st.session_state["zakres_val"] < total_draws:
         st.session_state["zakres_val"] += 1
+        st.rerun()
 
-  # Wyznaczamy bieżącą wartość w suwaku
   current_val = st.session_state["zakres_val"]
-
-  # Do suwaka przekazujemy listę dostępnych wartości, gwarantując że aktualna wartość też w niej jest
   slider_options = sorted(list(set(preset_steps + [current_val])))
 
   with col_slider:
-    selected_slider_val = st.select_slider(
+    zakres = st.select_slider(
         "Zakres losowań:",
         options=slider_options,
         value=current_val,
         format_func=lambda x: "Wszystkie losowania"
         if x == total_draws
         else f"{x} losowań",
-        key="slider_select_widget",
+        key="zakres_val",
         label_visibility="collapsed",
     )
-
-  # Jeśli użytkownik przesunął suwak palcem, aktualizujemy stan aplikacji
-  if selected_slider_val != st.session_state["zakres_val"]:
-    st.session_state["zakres_val"] = selected_slider_val
-    st.rerun()
-
-  zakres = st.session_state["zakres_val"]
 
   st.write(
       f"Wybrany zakres bazy: **{zakres}**"

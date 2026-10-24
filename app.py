@@ -101,7 +101,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. USTAWIENIA ANALIZY (PŁYNNY SELECT_SLIDER + PRECYZYJNE [+] / [-]) ---
+  # --- 2. USTAWIENIA ANALIZY ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   preset_steps = [
@@ -164,23 +164,39 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # Weryfikacja historyczna dla Top 10
-  latest_draw = df.iloc[-1]
-  latest_nums = {
-      f"{int(str(v).replace('.0', '').strip()):02d}"
-      if str(v).replace(".0", "").strip().isdigit()
-      else str(v).replace(".0", "").strip()
-      for v in latest_draw.iloc[3:].values
-      if pd.notna(v) and str(v).strip()
-  }
+  # --- POBRANIE OSOBNYCH NAJNOWSZYCH WYNIKÓW DLA 14:00 I 22:00 DO WERYFIKACJI ---
+  df_14_all = df[df["Godzina"] == "14:00"]
+  df_22_all = df[df["Godzina"] == "22:00"]
+
+  latest_nums_14 = set()
+  if not df_14_all.empty:
+    latest_draw_14 = df_14_all.iloc[-1]
+    latest_nums_14 = {
+        f"{int(str(v).replace('.0', '').strip()):02d}"
+        if str(v).replace(".0", "").strip().isdigit()
+        else str(v).replace(".0", "").strip()
+        for v in latest_draw_14.iloc[3:].values
+        if pd.notna(v) and str(v).strip()
+    }
+
+  latest_nums_22 = set()
+  if not df_22_all.empty:
+    latest_draw_22 = df_22_all.iloc[-1]
+    latest_nums_22 = {
+        f"{int(str(v).replace('.0', '').strip()):02d}"
+        if str(v).replace(".0", "").strip().isdigit()
+        else str(v).replace(".0", "").strip()
+        for v in latest_draw_22.iloc[3:].values
+        if pd.notna(v) and str(v).strip()
+    }
 
   df_analyzed = df.tail(int(zakres))
 
 
-  def format_top10_list(num_list):
+  def format_top10_list(num_list, session_latest_nums):
     res = []
     for n_str in num_list:
-      if n_str in latest_nums:
+      if n_str in session_latest_nums:
         res.append(f"{n_str}✅")
       else:
         res.append(f"{n_str}")
@@ -283,12 +299,11 @@ if df is not None and not df.empty:
           if len(pool) > limit
           else pool[:limit]
       )
-    else:  # mieszany - proporcje oparte na analizie bazy
+    else:
       if session_time == "14:00":
         num_even = math.ceil(limit / 2.0)
         num_odd = limit - num_even
       else:
-        # 22:00 - Przewaga parzystych (~52%)
         num_even = math.ceil(limit * 0.52)
         num_odd = limit - num_even
 
@@ -314,13 +329,13 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- 3. TOP 10 Z OZNACZENIAMI PRIORYTETÓW (✅) ---
+  # --- 3. TOP 10 Z NIEZALEŻNĄ WERYFIKACJĄ DLA 14:00 I 22:00 ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   st.caption("ℹ️ Bilans 14:00: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
 
   st.markdown("**Top 10 Parzyste:**")
   st.code(
-      format_top10_list(even_14)
+      format_top10_list(even_14, latest_nums_14)
       if even_14
       else "Brak danych w wybranym zakresie",
       language=None,
@@ -328,7 +343,7 @@ if df is not None and not df.empty:
 
   st.markdown("**Top 10 Nieparzyste:**")
   st.code(
-      format_top10_list(odd_14)
+      format_top10_list(odd_14, latest_nums_14)
       if odd_14
       else "Brak danych w wybranym zakresie",
       language=None,
@@ -344,7 +359,7 @@ if df is not None and not df.empty:
 
   st.markdown("**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**")
   st.code(
-      format_top10_list(even_22)
+      format_top10_list(even_22, latest_nums_22)
       if even_22
       else "Brak danych w wybranym zakresie",
       language=None,
@@ -352,7 +367,7 @@ if df is not None and not df.empty:
 
   st.markdown("**Top 10 Nieparzyste:**")
   st.code(
-      format_top10_list(odd_22)
+      format_top10_list(odd_22, latest_nums_22)
       if odd_22
       else "Brak danych w wybranym zakresie",
       language=None,
@@ -360,7 +375,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE Z OZNACZENIAMI ✅ ---
+  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE ---
   st.subheader(
       "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
   )

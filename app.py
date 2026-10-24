@@ -101,43 +101,31 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. USTAWIENIA ANALIZY (SELECT_SLIDER Z PRZYCISKAMI [-] / [+]) ---
+  # --- 2. USTAWIENIA ANALIZY (PŁYNNY SUWAK Z PRZYCISKAMI [-] / [+] CO 1) ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
-  raw_options = [1, 5, 10, 15, 20, 50, 100, 200, total_draws]
-  options = sorted(list(set([opt for opt in raw_options if opt <= total_draws])))
-  if total_draws not in options:
-    options.append(total_draws)
-
   if "zakres_val" not in st.session_state:
-    default_val = 20 if 20 in options else options[-1]
-    st.session_state["zakres_val"] = default_val
-  else:
-    if st.session_state["zakres_val"] not in options:
-      st.session_state["zakres_val"] = options[-1]
+    st.session_state["zakres_val"] = 20 if total_draws >= 20 else total_draws
 
   col_minus, col_slider, col_plus = st.columns([1, 4, 1])
 
   with col_minus:
     if st.button("➖", use_container_width=True, key="main_minus"):
-      current_idx = options.index(st.session_state["zakres_val"])
-      if current_idx > 0:
-        st.session_state["zakres_val"] = options[current_idx - 1]
+      if st.session_state["zakres_val"] > 1:
+        st.session_state["zakres_val"] -= 1
 
   with col_plus:
     if st.button("➕", use_container_width=True, key="main_plus"):
-      current_idx = options.index(st.session_state["zakres_val"])
-      if current_idx < len(options) - 1:
-        st.session_state["zakres_val"] = options[current_idx + 1]
+      if st.session_state["zakres_val"] < total_draws:
+        st.session_state["zakres_val"] += 1
 
   with col_slider:
-    zakres = st.select_slider(
+    zakres = st.slider(
         "Zakres losowań:",
-        options=options,
+        min_value=1,
+        max_value=total_draws,
         value=st.session_state["zakres_val"],
-        format_func=lambda x: "Wszystkie losowania"
-        if x == total_draws
-        else str(x),
+        step=1,
         key="zakres_val",
         label_visibility="collapsed",
     )
@@ -402,7 +390,6 @@ if df is not None and not df.empty:
       True,
   )
 
-  # O 22:00 parzyste mają historyczny priorytet
   render_generator_section(
       "Rekomendowany Zakład: Parzyste (22:00)",
       "22:00",

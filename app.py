@@ -479,13 +479,32 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ NA SAMYM DOLE ---
+  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ (OD NAJNOWSZEGO, BEZ PRZEWIJANIA BOKiem) ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   st.caption(
-      "Poniżej znajduje się kompletny zestaw historycznych losowań z bazy"
-      " danych."
+      "Najnowsze losowania na górze. Wszystkie liczby w czytelnej kolumnie"
+      " bez przewijania w bok."
   )
-  st.dataframe(df, use_container_width=True)
+
+  display_data = []
+  df_reversed = df.iloc[::-1]
+  for _, row in df_reversed.iterrows():
+    nums = [
+        f"{int(str(v).replace('.0', '').strip()):02d}"
+        if str(v).replace(".0", "").strip().isdigit()
+        else str(v).replace(".0", "").strip()
+        for v in row.iloc[3:].values
+        if pd.notna(v) and str(v).strip()
+    ]
+    display_data.append({
+        "ID": row["ID"],
+        "Data": row["Data"],
+        "Godzina": row["Godzina"],
+        "Wylosowane liczby": " ".join(nums),
+    })
+
+  df_compact = pd.DataFrame(display_data)
+  st.dataframe(df_compact, use_container_width=True, hide_index=True)
 
 else:
   st.warning("Oczekiwanie na ładowanie bazy danych...")

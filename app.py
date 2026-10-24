@@ -254,14 +254,18 @@ if df is not None and not df.empty:
       if draw_nums:
         draws_lists.append(set(draw_nums))
 
-    if not all_session_nums:
-      return []
-
-    counts = pd.Series(all_session_nums).value_counts()
+    counts = (
+        pd.Series(all_session_nums).value_counts()
+        if all_session_nums
+        else pd.Series(dtype=int)
+    )
     top_frequent = counts.head(10).index.tolist()
 
     even_cands = {}
     odd_cands = {}
+
+    all_even = [f"{n:02d}" for n in range(2, 81, 2)]
+    all_odd = [f"{n:02d}" for n in range(1, 80, 2)] + ["80"]
 
     for cand in counts.index.tolist():
       base_freq = counts[cand]
@@ -277,27 +281,34 @@ if df is not None and not df.empty:
         odd_cands[cand] = score
 
     sorted_even = sorted(
-        even_cands.keys(), key=lambda x: even_cands[x], reverse=True
+        even_cands.keys(), key=lambda x: even_cands.get(x, 0), reverse=True
     )
     sorted_odd = sorted(
-        odd_cands.keys(), key=lambda x: odd_cands[x], reverse=True
+        odd_cands.keys(), key=lambda x: odd_cands.get(x, 0), reverse=True
     )
+
+    for e in all_even:
+      if e not in sorted_even:
+        sorted_even.append(e)
+    for o in all_odd:
+      if o not in sorted_odd:
+        sorted_odd.append(o)
 
     rng = random.Random(seed)
 
     if parity_type == "even":
-      pool = sorted_even[: max(15, limit * 2)]
+      pool = sorted_even
       selected = (
           rng.sample(pool, min(limit, len(pool)))
-          if len(pool) > limit
-          else pool[:limit]
+          if len(pool) >= limit
+          else pool
       )
     elif parity_type == "odd":
-      pool = sorted_odd[: max(15, limit * 2)]
+      pool = sorted_odd
       selected = (
           rng.sample(pool, min(limit, len(pool)))
-          if len(pool) > limit
-          else pool[:limit]
+          if len(pool) >= limit
+          else pool
       )
     else:
       if session_time == "14:00":
@@ -307,23 +318,35 @@ if df is not None and not df.empty:
         num_even = math.ceil(limit * 0.52)
         num_odd = limit - num_even
 
-      pool_e = sorted_even[: max(10, num_even * 2)]
-      pool_o = sorted_odd[: max(10, num_odd * 2)]
+      pool_e = sorted_even
+      pool_o = sorted_odd
 
       sel_e = (
           rng.sample(pool_e, min(num_even, len(pool_e)))
-          if len(pool_e) > num_even
-          else pool_e[:num_even]
+          if len(pool_e) >= num_even
+          else pool_e
       )
       sel_o = (
           rng.sample(pool_o, min(num_odd, len(pool_o)))
-          if len(pool_o) > num_odd
-          else pool_o[:num_odd]
+          if len(pool_o) >= num_odd
+          else pool_o
       )
 
       selected = sel_e + sel_o
 
-    return sorted(selected, key=lambda x: int(x))
+      selected_set = set(selected)
+      if len(selected) < limit:
+        all_valid = (
+            all_even + all_odd
+            if parity_type == "mixed"
+            else (all_even if parity_type == "even" else all_odd)
+        )
+        remaining = [n for n in all_valid if n not in selected_set]
+        needed = limit - len(selected)
+        if remaining and needed > 0:
+          selected += rng.sample(remaining, min(needed, len(remaining)))
+
+    return sorted(list(set(selected)), key=lambda x: int(x))[:limit]
 
 
   even_14, odd_14 = get_session_top10("14:00")

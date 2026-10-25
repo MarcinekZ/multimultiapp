@@ -9,24 +9,36 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=5)  # Natychmiastowe odświeżanie danych na żywo
+@st.cache_data(ttl=5)  # Natychmiastowe odświeżanie danych co 5 sekund
 def load_data():
   try:
-    # Próbujemy pobrać najświeższy plik danych (np. bezpośrednio z repozytorium lub źródła online)
+    # Próba pobrania najświeższego pliku bezpośrednio z publicznego źródła sieciowego/GitHub RAW
     url = "https://raw.githubusercontent.com/twoje-repo/twoja-sciezka/main/multi_multi (11).csv"
     
-    # Jeśli korzystasz z lokalnego pliku lub automatycznego źródła:
-    for fname in [
-        "multi_multi (11).csv",
-        "multi_multi (10).csv",
-        "multi_multi.csv",
-    ]:
-      try:
-        df = pd.read_csv(fname, header=None)
-        break
-      except FileNotFoundError:
-        continue
-    else:
+    df = None
+    try:
+      # Pobieranie danych online na żywo
+      res = requests.get(url, timeout=5)
+      if res.status_code == 200:
+        from io import StringIO
+        df = pd.read_csv(StringIO(res.text), header=None)
+    except Exception:
+      pass
+
+    # Fallback do lokalnych plików, jeśli pobieranie online wymaga konfiguracji adresu URL
+    if df is None or df.empty:
+      for fname in [
+          "multi_multi (11).csv",
+          "multi_multi (10).csv",
+          "multi_multi.csv",
+      ]:
+        try:
+          df = pd.read_csv(fname, header=None)
+          break
+        except FileNotFoundError:
+          continue
+
+    if df is None or df.empty:
       return None
 
     num_cols = df.shape[1]

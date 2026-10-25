@@ -9,16 +9,24 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=30)  # Automatyczne odświeżanie danych z sieci
+@st.cache_data(ttl=15)
 def load_data():
   df = None
+  fetch_error = None
   try:
-    # Bezpośrednie pobieranie najświeższych wyników z oficjalnego źródła online
+    # Próba pobrania najświeższych wyników z oficjalnego API Lotto
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=100"
     )
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    res = requests.get(api_url, headers=headers, timeout=5)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+            " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+    }
+    res = requests.get(api_url, headers=headers, timeout=6)
+
     if res.status_code == 200:
       data = res.json()
       rows = []
@@ -53,11 +61,17 @@ def load_data():
 
       if rows:
         df = pd.DataFrame(rows)
-  except Exception:
-    pass
+    else:
+      fetch_error = f"Serwer Lotto zwrócił kod statusu: {res.status_code}"
+  except Exception as e:
+    fetch_error = str(e)
 
-  # Awaryjny fallback do pliku lokalnego, gdyby sieć chwilowo nie odpowiadała
+  # Awaryjny fallback do pliku lokalnego w razie blokady sieciowej
   if df is None or df.empty:
+    st.toast(
+        "⚠️ Pobieranie online zablokowane/niedostępne. Używam bazy lokalnej.",
+        icon="⚠️",
+    )
     for fname in [
         "multi_multi (11).csv",
         "multi_multi (10).csv",

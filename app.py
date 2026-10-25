@@ -9,70 +9,85 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)  # Automatyczne odświeżanie danych z sieci
 def load_data():
+  df = None
   try:
-    # Próba bezpośredniego pobrania najnowszych wyników z oficjalnego źródła / API online
+    # Bezpośrednie pobieranie najświeższych wyników z oficjalnego źródła online
     api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=50"
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=100"
     )
-    df = None
-    try:
-      headers = {"User-Agent": "Mozilla/5.0"}
-      res = requests.get(api_url, headers=headers, timeout=5)
-      if res.status_code == 200:
-        data = res.json()
-        rows = []
-        for item in data.get("results", []):
-          draw_id = item.get("drawId")
-          date_str = item.get("drawDate", "").split("T")[0]
-          # Rozróżnienie godzin losowań Multi Multi (14:00 i 21:40/22:00)
-          # Zazwyczaj w API godzina jest w polu drawTime lub w dacie
-          time_str = item.get("drawTime", "14:00")
-          results_str = item.get("resultsJson", [])
-          if not results_str and "results" in item:
-            results_str = item["results"]
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    res = requests.get(api_url, headers=headers, timeout=5)
+    if res.status_code == 200:
+      data = res.json()
+      rows = []
+      for item in data.get("results", []):
+        draw_id = str(item.get("drawId", ""))
+        draw_date_time = item.get("drawDate", "")
 
-          row = [draw_id, date_str, time_str] + list(results_str)
+        if "T" in draw_date_time:
+          date_str, time_full = draw_date_time.split("T")
+          parts = date_str.split("-")
+          if len(parts) == 3:
+            formatted_date = f"{parts[2]}.{parts[1]}.{parts[0]}"
+          else:
+            formatted_date = date_str
+          time_str = time_full[:5]
+        else:
+          formatted_date = draw_date_time
+          time_str = "14:00"
+
+        if "14" in time_str:
+          time_str = "14:00"
+        else:
+          time_str = "22:00"
+
+        nums = item.get("results", [])
+        if not nums and "resultsJson" in item:
+          nums = item["resultsJson"]
+
+        if nums:
+          row = [draw_id, formatted_date, time_str] + list(nums)
           rows.append(row)
 
-        if rows:
-          df = pd.DataFrame(rows)
-    except Exception:
-      pass
+      if rows:
+        df = pd.DataFrame(rows)
+  except Exception:
+    pass
 
-    # Jeśli pobieranie online napotkało ograniczenia, korzystamy z pliku bazowego
-    if df is None or df.empty:
-      for fname in [
-          "multi_multi (11).csv",
-          "multi_multi (10).csv",
-          "multi_multi.csv",
-      ]:
-        try:
-          df = pd.read_csv(fname, header=None)
-          break
-        except FileNotFoundError:
-          continue
+  # Awaryjny fallback do pliku lokalnego, gdyby sieć chwilowo nie odpowiadała
+  if df is None or df.empty:
+    for fname in [
+        "multi_multi (11).csv",
+        "multi_multi (10).csv",
+        "multi_multi.csv",
+    ]:
+      try:
+        df = pd.read_csv(fname, header=None)
+        break
+      except FileNotFoundError:
+        continue
 
-    if df is None or df.empty:
-      return None
-
-    num_cols = df.shape[1]
-    cols = ["ID", "Data", "Godzina"] + [
-        f"L{i}" for i in range(1, num_cols - 2)
-    ]
-    df.columns = cols
-    if "ID" in df.columns:
-      df["ID"] = (
-          df["ID"]
-          .astype(str)
-          .str.replace(r"\.0$", "", regex=True)
-          .str.strip()
-      )
-    return df
-  except Exception as e:
-    st.error(f"Błąd podczas ładowania bazy danych: {e}")
+  if df is None or df.empty:
     return None
+
+  num_cols = df.shape[1]
+  cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
+  df.columns = cols
+  if "ID" in df.columns:
+    df["ID"] = (
+        df["ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    )
+
+  # Sortowanie chronologiczne po ID losowania
+  try:
+    df["ID_int"] = pd.to_numeric(df["ID"], errors="coerce")
+    df = df.sort_values("ID_int").drop(columns=["ID_int"]).reset_index(drop=True)
+  except Exception:
+    pass
+
+  return df
 
 
 df = load_data()

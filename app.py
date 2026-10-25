@@ -9,23 +9,39 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=5)  # Natychmiastowe odświeżanie danych co 5 sekund
+@st.cache_data(ttl=60)
 def load_data():
   try:
-    # Próba pobrania najświeższego pliku bezpośrednio z publicznego źródła sieciowego/GitHub RAW
-    url = "https://raw.githubusercontent.com/twoje-repo/twoja-sciezka/main/multi_multi (11).csv"
-    
+    # Próba bezpośredniego pobrania najnowszych wyników z oficjalnego źródła / API online
+    api_url = (
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=50"
+    )
     df = None
     try:
-      # Pobieranie danych online na żywo
-      res = requests.get(url, timeout=5)
+      headers = {"User-Agent": "Mozilla/5.0"}
+      res = requests.get(api_url, headers=headers, timeout=5)
       if res.status_code == 200:
-        from io import StringIO
-        df = pd.read_csv(StringIO(res.text), header=None)
+        data = res.json()
+        rows = []
+        for item in data.get("results", []):
+          draw_id = item.get("drawId")
+          date_str = item.get("drawDate", "").split("T")[0]
+          # Rozróżnienie godzin losowań Multi Multi (14:00 i 21:40/22:00)
+          # Zazwyczaj w API godzina jest w polu drawTime lub w dacie
+          time_str = item.get("drawTime", "14:00")
+          results_str = item.get("resultsJson", [])
+          if not results_str and "results" in item:
+            results_str = item["results"]
+
+          row = [draw_id, date_str, time_str] + list(results_str)
+          rows.append(row)
+
+        if rows:
+          df = pd.DataFrame(rows)
     except Exception:
       pass
 
-    # Fallback do lokalnych plików, jeśli pobieranie online wymaga konfiguracji adresu URL
+    # Jeśli pobieranie online napotkało ograniczenia, korzystamy z pliku bazowego
     if df is None or df.empty:
       for fname in [
           "multi_multi (11).csv",

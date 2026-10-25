@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)  # Krótki TTL, aby dane szybko się odświeżały
 def load_data():
   try:
     for fname in [
@@ -39,7 +39,7 @@ def load_data():
       )
     return df
   except Exception as e:
-    st.error(f"Błąd podczas ładowania pliku CSV: {e}")
+    st.error(f"Błąd podczas ładowania bazy danych: {e}")
     return None
 
 
@@ -479,7 +479,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ (OD NAJNOWSZEGO, BEZ PRZEWIJANIA BOKiem) ---
+  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   st.caption(
       "Najnowsze losowania na górze. Wszystkie liczby w czytelnej kolumnie"

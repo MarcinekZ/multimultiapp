@@ -9,9 +9,13 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=10)  # Krótki TTL, aby dane szybko się odświeżały
+@st.cache_data(ttl=5)  # Natychmiastowe odświeżanie danych na żywo
 def load_data():
   try:
+    # Próbujemy pobrać najświeższy plik danych (np. bezpośrednio z repozytorium lub źródła online)
+    url = "https://raw.githubusercontent.com/twoje-repo/twoja-sciezka/main/multi_multi (11).csv"
+    
+    # Jeśli korzystasz z lokalnego pliku lub automatycznego źródła:
     for fname in [
         "multi_multi (11).csv",
         "multi_multi (10).csv",

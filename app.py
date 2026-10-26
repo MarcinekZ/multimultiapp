@@ -11,7 +11,6 @@ st.set_page_config(
 
 def load_data():
   df_live = None
-  api_error = None
   try:
     session = requests.Session()
     api_url = (
@@ -59,14 +58,13 @@ def load_data():
 
       if rows:
         df_live = pd.DataFrame(rows)
-    else:
-      api_error = f"Kod odpowiedzi HTTP: {res.status_code}"
-  except Exception as e:
-    api_error = str(e)
+  except Exception:
+    pass
 
-  # Ładowanie bazy lokalnej jako awaryjny zapas
+  # Awaryjne ładowanie bazy lokalnej CSV
   df_csv = None
   for fname in [
+      "multi_multi (12).csv",
       "multi_multi (11).csv",
       "multi_multi (10).csv",
       "multi_multi.csv",
@@ -81,7 +79,7 @@ def load_data():
     st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
     df = df_live
   elif df_csv is not None and not df_csv.empty:
-    st.sidebar.error(f"🔴 Status: Plik lokalny CSV (API zablokowane)")
+    st.sidebar.error("🔴 Status: Plik lokalny CSV (Tryb awaryjny)")
     df = df_csv
   else:
     return None
@@ -134,14 +132,14 @@ df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-# --- PRZYCISK ODŚWIEŻANIA ---
+# Przycisk ręcznego odświeżenia
 if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
   st.rerun()
 
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ NA SAMEJ GÓRZE ---
+  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ (PRZESKOKI) ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -216,7 +214,7 @@ if df is not None and not df.empty:
 
   if "zakres_val" not in st.session_state:
     st.session_state["zakres_val"] = (
-        20 if 20 in preset_steps else preset_steps[0]
+        30 if 30 in preset_steps else preset_steps[0]
     )
 
   col_minus, col_slider, col_plus = st.columns([1, 4, 1])
@@ -442,23 +440,27 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- 3. TOP 10 Z NIEZALEŻNĄ WERYFIKACJĄ DLA 14:00 I 22:00 ---
+  # --- 3. TOP 10 Z WERYFIKACJĄ TRAFIEŃ (14:00 I 22:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   st.caption("ℹ️ Bilans 14:00: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
 
-  st.markdown("**Top 10 Parzyste:**")
+  hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
+  hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
+  st.markdown(
+      f"**Top 10 Parzyste** *(Trafienia w ost. losowaniu: {hits_14_e}/10)*:"
+  )
   st.code(
       format_top10_list(even_14, latest_nums_14)
       if even_14
-      else "Brak danych w wybranym zakresie",
+      else "Brak danych",
       language=None,
   )
 
-  st.markdown("**Top 10 Nieparzyste:**")
+  st.markdown(
+      f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/10)*:"
+  )
   st.code(
-      format_top10_list(odd_14, latest_nums_14)
-      if odd_14
-      else "Brak danych w wybranym zakresie",
+      format_top10_list(odd_14, latest_nums_14) if odd_14 else "Brak danych",
       language=None,
   )
 
@@ -470,19 +472,25 @@ if df is not None and not df.empty:
       " (~52%)"
   )
 
-  st.markdown("**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**")
+  hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
+  hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
+
+  st.markdown(
+      "**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**"
+      f" *(Trafienia w ost. losowaniu: {hits_22_e}/10)*:"
+  )
   st.code(
       format_top10_list(even_22, latest_nums_22)
       if even_22
-      else "Brak danych w wybranym zakresie",
+      else "Brak danych",
       language=None,
   )
 
-  st.markdown("**Top 10 Nieparzyste:**")
+  st.markdown(
+      f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/10)*:"
+  )
   st.code(
-      format_top10_list(odd_22, latest_nums_22)
-      if odd_22
-      else "Brak danych w wybranym zakresie",
+      format_top10_list(odd_22, latest_nums_22) if odd_22 else "Brak danych",
       language=None,
   )
 
@@ -493,8 +501,8 @@ if df is not None and not df.empty:
       "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
   )
   st.caption(
-      "Oznaczenia ✅ wskazują rekomendowany priorytet parzystości wynikający z"
-      " bazy historycznej."
+      "Oznaczenia ✅ wskazują rekomendowany priorytet parzystości. Każde"
+      " okienko ma przycisk szybkiego kopiowania w rogu!"
   )
 
 
@@ -549,7 +557,7 @@ if df is not None and not df.empty:
   )
 
   render_generator_section(
-      "Rekomendowany Zakွဲd: Parzyste (22:00)",
+      "Rekomendowany Zakład: Parzyste (22:00)",
       "22:00",
       "even",
       "e22",

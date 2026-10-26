@@ -11,10 +11,11 @@ st.set_page_config(
 
 @st.cache_data(ttl=15)
 def load_data():
-  df = None
+  df_live = None
   try:
+    # Zwiększamy pulę do 300 losowań, aby objąć wszystkie najświeższe sesje
     api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=200"
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=300"
     )
     headers = {
         "User-Agent": (
@@ -44,12 +45,8 @@ def load_data():
           formatted_date = draw_date_time
           time_str = "14:00"
 
-        # Precyzyjne mapowanie na oryginalne godziny 14:00 oraz 22:00
         hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
-        if hour_val < 18:
-          time_str = "14:00"
-        else:
-          time_str = "22:00"
+        time_str = "14:00" if hour_val < 18 else "22:00"
 
         nums = item.get("results", [])
         if not nums and "resultsJson" in item:
@@ -60,35 +57,49 @@ def load_data():
           rows.append(row)
 
       if rows:
-        df = pd.DataFrame(rows)
+        df_live = pd.DataFrame(rows)
   except Exception:
     pass
 
-  # Awaryjny fallback do pliku lokalnego
-  if df is None or df.empty:
-    for fname in [
-        "multi_multi (11).csv",
-        "multi_multi (10).csv",
-        "multi_multi.csv",
-    ]:
-      try:
-        df = pd.read_csv(fname, header=None)
-        break
-      except FileNotFoundError:
-        continue
+  # Ładowanie bazy lokalnej jako uzupełnienie
+  df_csv = None
+  for fname in [
+      "multi_multi (11).csv",
+      "multi_multi (10).csv",
+      "multi_multi.csv",
+  ]:
+    try:
+      df_csv = pd.read_csv(fname, header=None)
+      break
+    except FileNotFoundError:
+      continue
 
-  if df is None or df.empty:
+  # Priorytet dla danych żywych z API, fallback do CSV
+  if df_live is not None and not df_live.empty:
+    df = df_live
+    st.sidebar.success("🟢 Status: Dane Live z sieci")
+  elif df_csv is not None and not df_csv.empty:
+    df = df_csv
+    st.sidebar.warning("⚠️ Status: Baza lokalna (CSV)")
+  else:
     return None
 
+  # Dynamiczne dopasowanie kolumn
   num_cols = df.shape[1]
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
-  df.columns = cols
+  if len(df.columns) == len(cols):
+    df.columns = cols
+  else:
+    df.columns = ["ID", "Data", "Godzina"] + [
+        f"L{i}" for i in range(1, df.shape[1] - 2)
+    ]
+
   if "ID" in df.columns:
     df["ID"] = (
         df["ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     )
 
-  # Normalizacja godzin do oryginalnego formatu 14:00 oraz 22:00
+  # Normalizacja godzin do formatu 14:00 oraz 22:00
   def clean_hour(val):
     s = str(val).strip()
     try:
@@ -103,10 +114,15 @@ def load_data():
 
   df["Godzina"] = df["Godzina"].apply(clean_hour)
 
-  # Sortowanie chronologiczne po ID losowania
+  # Sortowanie chronologiczne i usuwanie duplikatów po ID
   try:
     df["ID_int"] = pd.to_numeric(df["ID"], errors="coerce")
-    df = df.sort_values("ID_int").drop(columns=["ID_int"]).reset_index(drop=True)
+    df = (
+        df.sort_values("ID_int")
+        .drop_duplicates(subset=["ID"])
+        .drop(columns=["ID_int"])
+        .reset_index(drop=True)
+    )
   except Exception:
     pass
 
@@ -561,7 +577,7 @@ if df is not None and not df.empty:
   for _, row in df_reversed.iterrows():
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0", "").strip().isdigit()
+        if str(v).replace(".0', '').strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
         if pd.notna(v) and str(v).strip()

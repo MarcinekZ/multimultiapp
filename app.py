@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=15)
+# Brak buforowania (cache) – aplikacja zawsze pobiera najświeższe dane na żywo z sieci przy każdym odświeżeniu
 def load_data():
   df_live = None
   try:
@@ -25,7 +25,7 @@ def load_data():
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.lotto.pl/multi-multi/wyniki",
     }
-    res = session.get(api_url, headers=headers, timeout=15)
+    res = session.get(api_url, headers=headers, timeout=10)
 
     if res.status_code == 200:
       data = res.json()
@@ -62,7 +62,7 @@ def load_data():
   except Exception:
     pass
 
-  # Ładowanie bazy lokalnej jako awaryjny zapas
+  # Awaryjne ładowanie bazy lokalnej, gdyby sieć była niedostępna
   df_csv = None
   for fname in [
       "multi_multi (11).csv",
@@ -77,10 +77,8 @@ def load_data():
 
   if df_live is not None and not df_live.empty:
     df = df_live
-    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
   elif df_csv is not None and not df_csv.empty:
     df = df_csv
-    st.sidebar.warning("⚠️ Status: Baza lokalna (CSV)")
   else:
     return None
 
@@ -131,11 +129,6 @@ def load_data():
 df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
-
-# --- PRZYCISK WYMUSZENIA NATYCHMIASTOWEGO POBRANIA Z SIECI ---
-if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
-  st.cache_data.clear()
-  st.rerun()
 
 if df is not None and not df.empty:
   total_draws = len(df)

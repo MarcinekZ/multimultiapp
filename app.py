@@ -23,7 +23,7 @@ def load_data():
         ),
         "Accept": "application/json, text/plain, */*",
     }
-    res = requests.get(api_url, headers=headers, timeout=6)
+    res = requests.get(api_url, headers=headers, timeout=15)
 
     if res.status_code == 200:
       data = res.json()
@@ -42,14 +42,14 @@ def load_data():
           time_str = time_full[:5]
         else:
           formatted_date = draw_date_time
-          time_str = "14:00"
+          time_str = "14:15"
 
-        # Precyzyjne rozróżnienie sesji popołudniowej i wieczornej
+        # Precyzyjne mapowanie na godziny 14:15 oraz 22:15 zgodnie z wytycznymi
         hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
         if hour_val < 18:
-          time_str = "14:00"
+          time_str = "14:15"
         else:
-          time_str = "22:00"
+          time_str = "22:15"
 
         nums = item.get("results", [])
         if not nums and "resultsJson" in item:
@@ -219,9 +219,9 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- POBRANIE OSOBNYCH NAJNOWSZYCH WYNIKÓW DLA 14:00 I 22:00 DO WERYFIKACJI ---
-  df_14_all = df[df["Godzina"] == "14:00"]
-  df_22_all = df[df["Godzina"] == "22:00"]
+  # --- POBRANIE OSOBNYCH NAJNOWSZYCH WYNIKÓW DLA 14:15 I 22:15 DO WERYFIKACJI ---
+  df_14_all = df[df["Godzina"] == "14:15"]
+  df_22_all = df[df["Godzina"] == "22:15"]
 
   latest_nums_14 = set()
   if not df_14_all.empty:
@@ -366,7 +366,7 @@ if df is not None and not df.empty:
           else pool
       )
     else:
-      if session_time == "14:00":
+      if session_time == "14:15":
         num_even = math.ceil(limit / 2.0)
         num_odd = limit - num_even
       else:
@@ -404,12 +404,12 @@ if df is not None and not df.empty:
     return sorted(list(set(selected)), key=lambda x: int(x))[:limit]
 
 
-  even_14, odd_14 = get_session_top10("14:00")
-  even_22, odd_22 = get_session_top10("22:00")
+  even_14, odd_14 = get_session_top10("14:15")
+  even_22, odd_22 = get_session_top10("22:15")
 
-  # --- 3. TOP 10 Z NIEZALEŻNĄ WERYFIKACJĄ DLA 14:00 I 22:00 ---
-  st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
-  st.caption("ℹ️ Bilans 14:00: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
+  # --- 3. TOP 10 Z NIEZALEŻNĄ WERYFIKACJĄ DLA 14:15 I 22:15 ---
+  st.subheader("☀️ Godzina 14:15 (Statystyki Historyczne)")
+  st.caption("ℹ️ Bilans 14:15: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
 
   st.markdown("**Top 10 Parzyste:**")
   st.code(
@@ -429,9 +429,9 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
+  st.subheader("🌙 Godzina 22:15 (Statystyki Historyczne)")
   st.caption(
-      "ℹ️ Bilans 22:00: Wyraźny priorytet i przewaga liczb **Parzystych**"
+      "ℹ️ Bilans 22:15: Wyraźny priorytet i przewaga liczb **Parzystych**"
       " (~52%)"
   )
 
@@ -500,33 +500,33 @@ if df is not None and not df.empty:
 
 
   render_generator_section(
-      "Rekomendowany Zakład: Parzyste (14:00)", "14:00", "even", "e14", False
+      "Rekomendowany Zakład: Parzyste (14:15)", "14:15", "even", "e14", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14", False
+      "Rekomendowany Zakład: Nieparzyste (14:15)", "14:15", "odd", "o14", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (14:00) [Zrównoważony 50/50]",
-      "14:00",
+      "Rekomendowany Zakład: Mieszany (14:15) [Zrównoważony 50/50]",
+      "14:15",
       "mixed",
       "m14",
       True,
   )
 
   render_generator_section(
-      "Rekomendowany Zakład: Parzyste (22:00)",
-      "22:00",
+      "Rekomendowany Zakład: Parzyste (22:15)",
+      "22:15",
       "even",
       "e22",
       True,
   )
   render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22", False
+      "Rekomendowany Zakład: Nieparzyste (22:15)", "22:15", "odd", "o22", False
   )
   render_generator_section(
-      "Rekomendowany Zakład: Mieszany (22:00) [Zbalansowany z przewagą"
+      "Rekomendowany Zakład: Mieszany (22:15) [Zbalansowany z przewagą"
       " parzystych]",
-      "22:00",
+      "22:15",
       "mixed",
       "m22",
       True,

@@ -9,9 +9,9 @@ st.set_page_config(
 )
 
 
-# Brak buforowania (cache) – aplikacja zawsze pobiera najświeższe dane na żywo z sieci przy każdym odświeżeniu
 def load_data():
   df_live = None
+  api_error = None
   try:
     session = requests.Session()
     api_url = (
@@ -59,10 +59,12 @@ def load_data():
 
       if rows:
         df_live = pd.DataFrame(rows)
-  except Exception:
-    pass
+    else:
+      api_error = f"Kod odpowiedzi HTTP: {res.status_code}"
+  except Exception as e:
+    api_error = str(e)
 
-  # Awaryjne ładowanie bazy lokalnej, gdyby sieć była niedostępna
+  # Ładowanie bazy lokalnej jako awaryjny zapas
   df_csv = None
   for fname in [
       "multi_multi (11).csv",
@@ -76,8 +78,10 @@ def load_data():
       continue
 
   if df_live is not None and not df_live.empty:
+    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
     df = df_live
   elif df_csv is not None and not df_csv.empty:
+    st.sidebar.error(f"🔴 Status: Plik lokalny CSV (API zablokowane)")
     df = df_csv
   else:
     return None
@@ -129,6 +133,10 @@ def load_data():
 df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
+
+# --- PRZYCISK ODŚWIEŻANIA ---
+if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
+  st.rerun()
 
 if df is not None and not df.empty:
   total_draws = len(df)
@@ -541,7 +549,7 @@ if df is not None and not df.empty:
   )
 
   render_generator_section(
-      "Rekomendowany Zakład: Parzyste (22:00)",
+      "Rekomendowany Zakွဲd: Parzyste (22:00)",
       "22:00",
       "even",
       "e22",

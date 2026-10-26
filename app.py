@@ -25,7 +25,7 @@ def load_data():
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.lotto.pl/multi-multi/wyniki",
     }
-    res = session.get(api_url, headers=headers, timeout=10)
+    res = session.get(api_url, headers=headers, timeout=15)
 
     if res.status_code == 200:
       data = res.json()
@@ -62,7 +62,7 @@ def load_data():
   except Exception:
     pass
 
-  # Ładowanie bazy lokalnej jako baza bazowa
+  # Ładowanie bazy lokalnej jako awaryjny zapas
   df_csv = None
   for fname in [
       "multi_multi (11).csv",
@@ -77,8 +77,10 @@ def load_data():
 
   if df_live is not None and not df_live.empty:
     df = df_live
+    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
   elif df_csv is not None and not df_csv.empty:
     df = df_csv
+    st.sidebar.warning("⚠️ Status: Baza lokalna (CSV)")
   else:
     return None
 
@@ -128,30 +130,12 @@ def load_data():
 
 df = load_data()
 
-# --- PANEL AWARYJNY W MENU BOCZNYM DO DOPISANIA WYNIKU ---
-st.sidebar.subheader("🛠️ Panel Awaryjny Losowań")
-with st.sidebar.expander("➕ Dopisaj brakujące losowanie"):
-  manual_id = st.text_input("Numer losowania (ID)", value="17107")
-  manual_date = st.text_input("Data (DD.MM.RRRR)", value="25.10.2026")
-  manual_time = st.selectbox("Godzina", ["14:00", "22:00"])
-  manual_nums_str = st.text_input(
-      "Liczby (po spacji, np. 02 05 ...)", value=""
-  )
-  if st.button("Dopisz do bazy"):
-    if manual_nums_str:
-      nums_list = manual_nums_str.strip().split()
-      if len(nums_list) > 0:
-        new_row = {
-            "ID": manual_id,
-            "Data": manual_date,
-            "Godzina": manual_time,
-        }
-        for idx, val in enumerate(nums_list[:20], 1):
-          new_row[f"L{idx}"] = val
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        st.sidebar.success("Dodano pomyślnie!")
-
 st.title("📱 Mobilny Panel Analityczny Ekipy")
+
+# --- PRZYCISK WYMUSZENIA NATYCHMIASTOWEGO POBRANIA Z SIECI ---
+if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
+  st.cache_data.clear()
+  st.rerun()
 
 if df is not None and not df.empty:
   total_draws = len(df)

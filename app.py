@@ -13,8 +13,9 @@ st.set_page_config(
 def load_data():
   df = None
   try:
+    # Zwiększamy zakres pobierania z API do 200, aby objąć wszystkie najświeższe losowania
     api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=100"
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=200"
     )
     headers = {
         "User-Agent": (
@@ -44,7 +45,7 @@ def load_data():
           formatted_date = draw_date_time
           time_str = "14:15"
 
-        # Precyzyjne mapowanie na godziny 14:15 oraz 22:15 zgodnie z wytycznymi
+        # Ujednolicenie godzin do standardu 14:15 oraz 22:15 dla całej aplikacji
         hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
         if hour_val < 18:
           time_str = "14:15"

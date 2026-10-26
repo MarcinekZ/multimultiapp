@@ -13,7 +13,6 @@ st.set_page_config(
 def load_data():
   df_live = None
   try:
-    # Zwiększamy pulę do 300 losowań, aby objąć wszystkie najświeższe sesje
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=300"
     )
@@ -74,7 +73,6 @@ def load_data():
     except FileNotFoundError:
       continue
 
-  # Priorytet dla danych żywych z API, fallback do CSV
   if df_live is not None and not df_live.empty:
     df = df_live
     st.sidebar.success("🟢 Status: Dane Live z sieci")
@@ -84,7 +82,6 @@ def load_data():
   else:
     return None
 
-  # Dynamiczne dopasowanie kolumn
   num_cols = df.shape[1]
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
   if len(df.columns) == len(cols):
@@ -99,7 +96,7 @@ def load_data():
         df["ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     )
 
-  # Normalizacja godzin do formatu 14:00 oraz 22:00
+
   def clean_hour(val):
     s = str(val).strip()
     try:
@@ -112,9 +109,9 @@ def load_data():
       return "22:00"
     return "14:00"
 
+
   df["Godzina"] = df["Godzina"].apply(clean_hour)
 
-  # Sortowanie chronologiczne i usuwanie duplikatów po ID
   try:
     df["ID_int"] = pd.to_numeric(df["ID"], errors="coerce")
     df = (
@@ -250,7 +247,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- POBRANIE OSOBNYCH NAJNOWSZYCH WYNIKÓW DLA 14:00 I 22:00 DO WERYFIKACJI ---
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
@@ -577,7 +573,7 @@ if df is not None and not df.empty:
   for _, row in df_reversed.iterrows():
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0', '').strip().isdigit()
+        if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
         if pd.notna(v) and str(v).strip()

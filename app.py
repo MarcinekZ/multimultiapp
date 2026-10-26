@@ -13,7 +13,6 @@ st.set_page_config(
 def load_data():
   df = None
   try:
-    # Zwiększamy zakres pobierania z API do 200, aby objąć wszystkie najświeższe losowania
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=200"
     )
@@ -44,13 +43,6 @@ def load_data():
         else:
           formatted_date = draw_date_time
           time_str = "14:15"
-
-        # Ujednolicenie godzin do standardu 14:15 oraz 22:15 dla całej aplikacji
-        hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
-        if hour_val < 18:
-          time_str = "14:15"
-        else:
-          time_str = "22:15"
 
         nums = item.get("results", [])
         if not nums and "resultsJson" in item:
@@ -88,6 +80,21 @@ def load_data():
     df["ID"] = (
         df["ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     )
+
+  # Uniwersalna normalizacja godzin do formatu 14:15 oraz 22:15 dla pełnej spójności
+  def clean_hour(val):
+    s = str(val).strip()
+    if "14" in s:
+      return "14:15"
+    if "22" in s or "21" in s:
+      return "22:15"
+    try:
+      h = int(s.split(":")[0])
+      return "14:15" if h < 18 else "22:15"
+    except:
+      return "14:15"
+
+  df["Godzina"] = df["Godzina"].apply(clean_hour)
 
   # Sortowanie chronologiczne po ID losowania
   try:

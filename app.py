@@ -12,9 +12,7 @@ st.set_page_config(
 @st.cache_data(ttl=15)
 def load_data():
   df = None
-  fetch_error = None
   try:
-    # Próba pobrania najświeższych wyników z oficjalnego API Lotto
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=100"
     )
@@ -46,7 +44,9 @@ def load_data():
           formatted_date = draw_date_time
           time_str = "14:00"
 
-        if "14" in time_str:
+        # Precyzyjne rozróżnienie sesji popołudniowej i wieczornej
+        hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
+        if hour_val < 18:
           time_str = "14:00"
         else:
           time_str = "22:00"
@@ -61,17 +61,11 @@ def load_data():
 
       if rows:
         df = pd.DataFrame(rows)
-    else:
-      fetch_error = f"Serwer Lotto zwrócił kod statusu: {res.status_code}"
-  except Exception as e:
-    fetch_error = str(e)
+  except Exception:
+    pass
 
-  # Awaryjny fallback do pliku lokalnego w razie blokady sieciowej
+  # Awaryjny fallback do pliku lokalnego
   if df is None or df.empty:
-    st.toast(
-        "⚠️ Pobieranie online zablokowane/niedostępne. Używam bazy lokalnej.",
-        icon="⚠️",
-    )
     for fname in [
         "multi_multi (11).csv",
         "multi_multi (10).csv",

@@ -13,17 +13,21 @@ st.set_page_config(
 def load_data():
   df_live = None
   try:
+    # Używamy sesji i pełnych nagłówków przeglądarki, aby omijać blokady Cloudflare/Lotto
+    session = requests.Session()
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=300"
     )
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-            " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            " like Gecko) Chrome/122.0.0.0 Safari/537.36"
         ),
         "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.lotto.pl/multi-multi/wyniki",
+        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
     }
-    res = requests.get(api_url, headers=headers, timeout=15)
+    res = session.get(api_url, headers=headers, timeout=15)
 
     if res.status_code == 200:
       data = res.json()
@@ -57,10 +61,10 @@ def load_data():
 
       if rows:
         df_live = pd.DataFrame(rows)
-  except Exception:
-    pass
+  except Exception as e:
+    print(f"Błąd pobierania live: {e}")
 
-  # Ładowanie bazy lokalnej jako uzupełnienie
+  # Ładowanie bazy lokalnej jako awaryjny zapas
   df_csv = None
   for fname in [
       "multi_multi (11).csv",
@@ -73,12 +77,13 @@ def load_data():
     except FileNotFoundError:
       continue
 
+  # Priorytet dla świeżych danych z sieci
   if df_live is not None and not df_live.empty:
     df = df_live
-    st.sidebar.success("🟢 Status: Dane Live z sieci")
+    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
   elif df_csv is not None and not df_csv.empty:
     df = df_csv
-    st.sidebar.warning("⚠️ Status: Baza lokalna (CSV)")
+    st.sidebar.warning("⚠️ Status: Baza lokalna (Awaryjna)")
   else:
     return None
 

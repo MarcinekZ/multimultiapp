@@ -1,9 +1,9 @@
 name: Automatyczna Aktualizacja Wyników Multi Multi
 
 on:
-  workflow_dispatch: # Pozwala na ręczne uruchomienie w razie potrzeby
+  workflow_dispatch:
   schedule:
-    - cron: '35 12,20 * * *' # 12:35 UTC = 14:35 czasu polskiego, 20:35 UTC = 22:35 czasu polskiego
+    - cron: '35 12,20 * * *'
 
 jobs:
   update-data:
@@ -22,10 +22,10 @@ jobs:
           pip install pandas requests
 
       - name: Uruchomienie skryptu pobierającego wyniki
-        run: python update_script.py
+        run: python update.py
 
       - name: Zapis i commit zmian w bazie CSV
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'Automatyczna aktualizaja wyników losowania'
+          commit_message: 'Automatyczna aktualizacja wyników losowania'
           branch: main

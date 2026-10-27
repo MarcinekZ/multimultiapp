@@ -1,34 +1,31 @@
 name: Automatyczna Aktualizacja Wyników Multi Multi
 
 on:
+  workflow_dispatch: # Pozwala na ręczne uruchomienie w razie potrzeby
   schedule:
-    - cron: '10 12,20 * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    - cron: '35 12,20 * * *' # 12:35 UTC = 14:35 czasu polskiego, 20:35 UTC = 22:35 czasu polskiego
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
     steps:
-      - name: Pobranie kodu z repozytorium
-        uses: actions/checkout@v3
+      - name: Pobierz kod repozytorium
+        uses: actions/checkout@v4
 
       - name: Konfiguracja Pythona
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
-      - name: Instalacja bibliotek
-        run: pip install requests pandas
-
-      - name: Uruchomienie skryptu pobierającego
-        run: python update.py
-
-      - name: Zapis i wysłanie zmian do GitHub
+      - name: Instalacja zależności
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add "multi_multi (10).csv"
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Automatyczna aktualizacja wyników po losowaniu" && git push)
+          pip install pandas requests
+
+      - name: Uruchomienie skryptu pobierającego wyniki
+        run: python update_script.py
+
+      - name: Zapis i commit zmian w bazie CSV
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'Automatyczna aktualizaja wyników losowania'
+          branch: main

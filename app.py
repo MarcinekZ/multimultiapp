@@ -1,3 +1,5 @@
+from collections import Counter
+from itertools import combinations
 import math
 import random
 import pandas as pd
@@ -61,12 +63,11 @@ def load_data():
   except Exception:
     pass
 
-  # Awaryjne ładowanie bazy lokalnej CSV
   df_csv = None
   for fname in [
-      "multi_multi (12).csv",
-      "multi_multi (11).csv",
       "multi_multi (10).csv",
+      "multi_multi (11).csv",
+      "multi_multi (12).csv",
       "multi_multi.csv",
   ]:
     try:
@@ -132,80 +133,16 @@ df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-# Przycisk ręcznego odświeżenia
 if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
   st.rerun()
 
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ (PRZESKOKI) ---
-  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
-  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
-
-  recent_df = df.tail(5).iloc[::-1]
-  for i in range(len(recent_df) - 1):
-    curr = recent_df.iloc[i]
-    prev = recent_df.iloc[i + 1]
-
-    curr_nums = [
-        val
-        for val in curr.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-    prev_nums = [
-        val
-        for val in prev.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-
-    curr_set = set(curr_nums)
-    prev_set = set(prev_nums)
-    repeated = curr_set.intersection(prev_set)
-
-    draw_id = curr["ID"]
-    date_str = curr["Data"]
-    time_str = curr["Godzina"]
-
-    st.markdown(
-        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
-    )
-
-    formatted_display = []
-    for val in curr_nums:
-      val_clean = str(val).replace(".0", "").strip()
-      if val_clean.isdigit():
-        val_str = f"{int(val_clean):02d}"
-      else:
-        val_str = val_clean
-
-      if val in repeated or val_clean in repeated:
-        formatted_display.append(f"🔄{val_str}")
-      else:
-        formatted_display.append(f"{val_str}")
-
-    line1 = " ".join(formatted_display[:10])
-    line2 = " ".join(formatted_display[10:])
-    st.code(f"{line1}\n{line2}", language=None)
-
-  st.divider()
-
-  # --- 2. USTAWIENIA ANALIZY ---
+  # --- 1. USTAWIENIA ANALIZI ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
-  preset_steps = [
-      1,
-      5,
-      10,
-      15,
-      20,
-      30,
-      40,
-      50,
-      100,
-      200,
-      total_draws,
-  ]
+  preset_steps = [1, 5, 10, 15, 20, 30, 40, 50, 100, 200, total_draws]
   preset_steps = sorted(
       list(set([opt for opt in preset_steps if opt <= total_draws]))
   )
@@ -247,9 +184,57 @@ if df is not None and not df.empty:
     )
 
   st.write(
-      f"Wybrany zakres bazy: **{zakres}**"
+      f"Wybrany zakres bazy do analizy: **{zakres}**"
       f" {'losowań' if zakres < total_draws else '(Wszystkie losowania)'}"
   )
+  df_analyzed = df.tail(int(zakres))
+
+  st.divider()
+
+  # --- 2. ARCHIWUM OSTATNICH LOSOWAŃ ---
+  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
+  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
+
+  recent_df = df.tail(5).iloc[::-1]
+  for i in range(len(recent_df) - 1):
+    curr = recent_df.iloc[i]
+    prev = recent_df.iloc[i + 1]
+
+    curr_nums = [
+        val
+        for val in curr.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+    prev_nums = [
+        val
+        for val in prev.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+
+    curr_set = set(curr_nums)
+    prev_set = set(prev_nums)
+    repeated = curr_set.intersection(prev_set)
+
+    draw_id = curr["ID"]
+    date_str = curr["Data"]
+    time_str = curr["Godzina"]
+
+    st.markdown(
+        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
+    )
+
+    formatted_display = []
+    for val in curr_nums:
+      val_clean = str(val).replace(".0", "").strip()
+      val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
+      if val in repeated or val_clean in repeated:
+        formatted_display.append(f"🔄{val_str}")
+      else:
+        formatted_display.append(f"{val_str}")
+
+    line1 = " ".join(formatted_display[:10])
+    line2 = " ".join(formatted_display[10:])
+    st.code(f"{line1}\n{line2}", language=None)
 
   st.divider()
 
@@ -278,8 +263,6 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  df_analyzed = df.tail(int(zakres))
-
 
   def format_top10_list(num_list, session_latest_nums):
     res = []
@@ -288,16 +271,6 @@ if df is not None and not df.empty:
         res.append(f"{n_str}✅")
       else:
         res.append(f"{n_str}")
-    return " ".join(res)
-
-
-  def format_clean_list(num_list):
-    res = []
-    for n_str in num_list:
-      if n_str.isdigit():
-        res.append(f"{int(n_str):02d}")
-      else:
-        res.append(n_str)
     return " ".join(res)
 
 
@@ -323,127 +296,11 @@ if df is not None and not df.empty:
     return even_counts.head(10).index.tolist(), odd_counts.head(10).index.tolist()
 
 
-  def get_cooccurrence_recommendations(session_time, parity_type, limit, seed):
-    df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
-    if df_session.empty:
-      return []
-
-    draws_lists = []
-    all_session_nums = []
-    for row_vals in df_session.iloc[:, 3:].values:
-      draw_nums = []
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            num_int = int(cleaned_v)
-            draw_nums.append(f"{num_int:02d}")
-            all_session_nums.append(f"{num_int:02d}")
-      if draw_nums:
-        draws_lists.append(set(draw_nums))
-
-    counts = (
-        pd.Series(all_session_nums).value_counts()
-        if all_session_nums
-        else pd.Series(dtype=int)
-    )
-    top_frequent = counts.head(10).index.tolist()
-
-    even_cands = {}
-    odd_cands = {}
-
-    all_even = [f"{n:02d}" for n in range(2, 81, 2)]
-    all_odd = [f"{n:02d}" for n in range(1, 80, 2)] + ["80"]
-
-    for cand in counts.index.tolist():
-      base_freq = counts[cand]
-      co_occur = 0
-      for d_set in draws_lists:
-        if cand in d_set:
-          co_occur += len(d_set.intersection(top_frequent))
-      score = base_freq * 1.0 + co_occur * 2.5
-
-      if int(cand) % 2 == 0:
-        even_cands[cand] = score
-      else:
-        odd_cands[cand] = score
-
-    sorted_even = sorted(
-        even_cands.keys(), key=lambda x: even_cands.get(x, 0), reverse=True
-    )
-    sorted_odd = sorted(
-        odd_cands.keys(), key=lambda x: odd_cands.get(x, 0), reverse=True
-    )
-
-    for e in all_even:
-      if e not in sorted_even:
-        sorted_even.append(e)
-    for o in all_odd:
-      if o not in sorted_odd:
-        sorted_odd.append(o)
-
-    rng = random.Random(seed)
-
-    if parity_type == "even":
-      pool = sorted_even
-      selected = (
-          rng.sample(pool, min(limit, len(pool)))
-          if len(pool) >= limit
-          else pool
-      )
-    elif parity_type == "odd":
-      pool = sorted_odd
-      selected = (
-          rng.sample(pool, min(limit, len(pool)))
-          if len(pool) >= limit
-          else pool
-      )
-    else:
-      if session_time == "14:00":
-        num_even = math.ceil(limit / 2.0)
-        num_odd = limit - num_even
-      else:
-        num_even = math.ceil(limit * 0.52)
-        num_odd = limit - num_even
-
-      pool_e = sorted_even
-      pool_o = sorted_odd
-
-      sel_e = (
-          rng.sample(pool_e, min(num_even, len(pool_e)))
-          if len(pool_e) >= num_even
-          else pool_e
-      )
-      sel_o = (
-          rng.sample(pool_o, min(num_odd, len(pool_o)))
-          if len(pool_o) >= num_odd
-          else pool_o
-      )
-
-      selected = sel_e + sel_o
-
-      selected_set = set(selected)
-      if len(selected) < limit:
-        all_valid = (
-            all_even + all_odd
-            if parity_type == "mixed"
-            else (all_even if parity_type == "even" else all_odd)
-        )
-        remaining = [n for n in all_valid if n not in selected_set]
-        needed = limit - len(selected)
-        if remaining and needed > 0:
-          selected += rng.sample(remaining, min(needed, len(remaining)))
-
-    return sorted(list(set(selected)), key=lambda x: int(x))[:limit]
-
-
   even_14, odd_14 = get_session_top10("14:00")
   even_22, odd_22 = get_session_top10("22:00")
 
-  # --- 3. TOP 10 Z WERYFIKACJĄ TRAFIEŃ (14:00 I 22:00) ---
+  # --- 3. TOP 10 PARZYSTE I NIEPARZYSTE (14:00 oraz 22:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
-  st.caption("ℹ️ Bilans 14:00: Zrównoważony rozkład (50% Parzyste / 50% Nieparzyste)")
-
   hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
   hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
   st.markdown(
@@ -455,7 +312,6 @@ if df is not None and not df.empty:
       else "Brak danych",
       language=None,
   )
-
   st.markdown(
       f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/10)*:"
   )
@@ -467,14 +323,8 @@ if df is not None and not df.empty:
   st.divider()
 
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
-  st.caption(
-      "ℹ️ Bilans 22:00: Wyraźny priorytet i przewaga liczb **Parzystych**"
-      " (~52%)"
-  )
-
   hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
   hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
-
   st.markdown(
       "**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**"
       f" *(Trafienia w ost. losowaniu: {hits_22_e}/10)*:"
@@ -485,7 +335,6 @@ if df is not None and not df.empty:
       else "Brak danych",
       language=None,
   )
-
   st.markdown(
       f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/10)*:"
   )
@@ -496,14 +345,179 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. GENERATORY ZAKŁADÓW NA PRZYSZŁE LOSOWANIE ---
+
+  # --- 4. ANALIZA PAR I TRÓJEK (WSPÓŁWYSTĘPOWANIE) ---
+  st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
+  st.caption(
+      "Najczęściej występujące kombinacje liczb w tym samym losowaniu z"
+      f" wybranego zakresu ({zakres} losowań)."
+  )
+
+  selected_session_for_tuples = st.selectbox(
+      "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
+  )
+  df_tuples_session = df_analyzed[
+      df_analyzed["Godzina"] == selected_session_for_tuples
+  ]
+
+
+  def get_top_tuples(df_session, n_size, limit=5):
+    counter = Counter()
+    for row_vals in df_session.iloc[:, 3:].values:
+      draw_nums = []
+      for val in row_vals:
+        if pd.notna(val) and str(val).strip():
+          cleaned_v = str(val).replace(".0", "").strip()
+          if cleaned_v.isdigit():
+            draw_nums.append(f"{int(cleaned_v):02d}")
+      if len(draw_nums) >= n_size:
+        sorted_nums = sorted(list(set(draw_nums)), key=lambda x: int(x))
+        for comb in combinations(sorted_nums, n_size):
+          counter[comb] += 1
+    return counter.most_common(limit)
+
+
+  top_pairs = get_top_tuples(df_tuples_session, 2, 5)
+  top_triplets = get_top_tuples(df_tuples_session, 3, 5)
+
+  st.markdown(f"**Top 5 Par (Sesja {selected_session_for_tuples}):**")
+  pairs_display = [
+      f"({' - '.join(pair)}) [wystąpiły {cnt}x]" for pair, cnt in top_pairs
+  ]
+  st.code(
+      "\n".join(pairs_display)
+      if pairs_display
+      else "Za mało danych w zakresie",
+      language=None,
+  )
+
+  st.markdown(f"**Top 5 Trójek (Sesja {selected_session_for_tuples}):**")
+  triplets_display = [
+      f"({' - '.join(trip)}) [wystąpiły {cnt}x]" for trip, cnt in top_triplets
+  ]
+  st.code(
+      "\n".join(triplets_display)
+      if triplets_display
+      else "Za mało danych w zakresie",
+      language=None,
+  )
+
+  st.divider()
+
+
+  # --- 5. INTELIGENTNY GENERATOR OPARTY O PARY W ZAKRESIE ---
+  def get_cooccurrence_recommendations(session_time, parity_type, limit, seed):
+    df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
+    if df_session.empty:
+      return []
+
+    pair_counter = Counter()
+    all_session_nums = []
+
+    for row_vals in df_session.iloc[:, 3:].values:
+      draw_nums = []
+      for val in row_vals:
+        if pd.notna(val) and str(val).strip():
+          cleaned_v = str(val).replace(".0", "").strip()
+          if cleaned_v.isdigit():
+            num_int = int(cleaned_v)
+            draw_nums.append(f"{num_int:02d}")
+            all_session_nums.append(f"{num_int:02d}")
+      if draw_nums:
+        d_set = sorted(list(set(draw_nums)), key=lambda x: int(x))
+        for p in combinations(d_set, 2):
+          pair_counter[p] += 1
+
+    counts = (
+        pd.Series(all_session_nums).value_counts()
+        if all_session_nums
+        else pd.Series(dtype=int)
+    )
+
+    all_even = [f"{n:02d}" for n in range(2, 81, 2)]
+    all_odd = [f"{n:02d}" for n in range(1, 80, 2)]
+
+    if parity_type == "even":
+      candidates = [n for n in all_even]
+    elif parity_type == "odd":
+      candidates = [n for n in all_odd]
+    else:
+      candidates = all_even + all_odd
+
+    scores = {}
+    for c in candidates:
+      ind_freq = counts.get(c, 0)
+      pair_weight = sum(
+          pair_counter[tuple(sorted([c, other], key=lambda x: int(x)))]
+          for other in candidates
+          if other != c
+      )
+      scores[c] = ind_freq * 1.0 + pair_weight * 1.5  # Silny nacisk na pary!
+
+    sorted_candidates = sorted(
+        candidates, key=lambda x: scores.get(x, 0), reverse=True
+    )
+
+    rng = random.Random(seed)
+    if not sorted_candidates:
+      return []
+
+    # Zachłanny wybór liczb najlepiej współwystępujących ze sobą
+    selected = [sorted_candidates[0]]
+
+    while len(selected) < limit and len(selected) < len(sorted_candidates):
+      best_next = None
+      best_score = -1
+      for cand in sorted_candidates:
+        if cand in selected:
+          continue
+
+        if parity_type == "mixed":
+          current_even = sum(1 for x in selected if int(x) % 2 == 0)
+          target_even = (
+              math.ceil(limit * 0.52)
+              if session_time == "22:00"
+              else math.ceil(limit / 2.0)
+          )
+          if (
+              int(cand) % 2 == 0
+              and current_even >= target_even
+              and (limit - len(selected)) <= (limit - target_even)
+          ):
+            continue
+
+        synergy = sum(
+            pair_counter[tuple(sorted([cand, s], key=lambda x: int(x)))]
+            for s in selected
+        )
+        total_score = scores.get(cand, 0) + synergy * 3.0
+        if total_score > best_score:
+          best_score = total_score
+          best_next = cand
+
+      if best_next:
+        selected.append(best_next)
+      else:
+        remaining = [c for c in sorted_candidates if c not in selected]
+        if remaining:
+          selected.append(rng.choice(remaining))
+        else:
+          break
+
+    return sorted(selected, key=lambda x: int(x))[:limit]
+
+
   st.subheader(
-      "🎯 Generator Rekomendowanych Zakładów (Na Nadchodzące Losowanie)"
+      "🎯 Generator Zakładów (Analiza Par i Współwystępowania w Zakresie)"
   )
   st.caption(
-      "Oznaczenia ✅ wskazują rekomendowany priorytet parzystości. Każde"
-      " okienko ma przycisk szybkiego kopiowania w rogu!"
+      "Generator od 1 do 10 liczb, który dobiera numery na podstawie tego, jak"
+      " silnie współwystępują w parach w wybranym zakresie losowań."
   )
+
+
+  def format_clean_list(num_list):
+    return " ".join([f"{int(n):02d}" if n.isdigit() else n for n in num_list])
 
 
   def render_generator_section(
@@ -577,13 +591,8 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
+  # --- 6. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
-  st.caption(
-      "Najnowsze losowania na górze. Wszystkie liczby w czytelnej kolumnie"
-      " bez przewijania w bok."
-  )
-
   display_data = []
   df_reversed = df.iloc[::-1]
   for _, row in df_reversed.iterrows():

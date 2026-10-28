@@ -3,7 +3,8 @@ name: Automatyczna Aktualizacja Wyników Multi Multi
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 12,21 * * *'
+    - cron: '50 12 * * *'    # 12:50 UTC = 14:50 czasu polskiego (po sesji 14:00)
+    - cron: '45 20 * * *'    # 20:45 UTC = 22:45 czasu polskiego (po sesji 22:00)
 
 permissions:
   contents: write

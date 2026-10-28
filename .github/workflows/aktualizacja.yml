@@ -3,7 +3,7 @@ name: Automatyczna Aktualizacja Wyników Multi Multi
 on:
   workflow_dispatch:
   schedule:
-    - cron: '35 12,20 * * *'
+    - cron: '45 12,21 * * *'
 
 permissions:
   contents: write

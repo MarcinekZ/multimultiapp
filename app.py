@@ -139,7 +139,7 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ (NA GÓRZE) ---
+  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -186,7 +186,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. USTAWIENIA ANALIZY / SUWAK (BLISKO STATYSTYK) ---
+  # --- 2. USTAWIENIA ANALIZY / SUWAK ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   preset_steps = [1, 5, 10, 15, 20, 30, 40, 50, 100, 200, total_draws]
@@ -306,113 +306,8 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top15("14:00")
   even_22, odd_22 = get_session_top15("22:00")
 
-  # --- 3. TOP 15 PARZYSTE I NIEPARZYSTE (14:00 oraz 22:00) ---
-  st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
-  hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
-  hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
-  st.markdown(
-      f"**Top 15 Parzyste** *(Trafienia w ost. losowaniu: {hits_14_e}/15)*:"
-  )
-  st.code(
-      format_top15_list(even_14, latest_nums_14)
-      if even_14
-      else "Brak danych",
-      language=None,
-  )
-  st.markdown(
-      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/15)*:"
-  )
-  st.code(
-      format_top15_list(odd_14, latest_nums_14) if odd_14 else "Brak danych",
-      language=None,
-  )
 
-  st.divider()
-
-  st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
-  hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
-  hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
-  st.markdown(
-      "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" *(Trafienia w ost. losowaniu: {hits_22_e}/15)*:"
-  )
-  st.code(
-      format_top15_list(even_22, latest_nums_22)
-      if even_22
-      else "Brak danych",
-      language=None,
-  )
-  st.markdown(
-      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/15)*:"
-  )
-  st.code(
-      format_top15_list(odd_22, latest_nums_22) if odd_22 else "Brak danych",
-      language=None,
-  )
-
-  st.divider()
-
-
-  # --- 4. ANALIZA PAR I TRÓJEK (WSPÓŁWYSTĘPOWANIE) ---
-  st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
-  st.caption(
-      "Najczęściej występujące kombinacje liczb w tym samym losowaniu z"
-      f" wybranego zakresu ({zakres} losowań)."
-  )
-
-  selected_session_for_tuples = st.selectbox(
-      "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
-  )
-  df_tuples_session = df_analyzed[
-      df_analyzed["Godzina"] == selected_session_for_tuples
-  ]
-
-
-  def get_top_tuples(df_session, n_size, limit=5):
-    counter = Counter()
-    for row_vals in df_session.iloc[:, 3:].values:
-      draw_nums = []
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            draw_nums.append(f"{int(cleaned_v):02d}")
-      if len(draw_nums) >= n_size:
-        sorted_nums = sorted(list(set(draw_nums)), key=lambda x: int(x))
-        for comb in combinations(sorted_nums, n_size):
-          counter[comb] += 1
-    return counter.most_common(limit)
-
-
-  top_pairs = get_top_tuples(df_tuples_session, 2, 5)
-  top_triplets = get_top_tuples(df_tuples_session, 3, 5)
-
-  st.markdown(f"**Top 5 Par (Sesja {selected_session_for_tuples}):**")
-  pairs_display = [
-      f"({' - '.join(pair)}) [wystąpiły {cnt}x]" for pair, cnt in top_pairs
-  ]
-  st.code(
-      "\n".join(pairs_display)
-      if pairs_display
-      else "Za mało danych w zakresie",
-      language=None,
-  )
-
-  st.markdown(f"**Top 5 Trójek (Sesja {selected_session_for_tuples}):**")
-  triplets_display = [
-      f"({' - '.join(trip)}) [wystąpiły {cnt}x]" for trip, cnt in top_triplets
-  ]
-  st.code(
-      "\n".join(triplets_display)
-      if triplets_display
-      else "Za mało danych w zakresie",
-      language=None,
-  )
-
-  st.divider()
-
-
-  # --- 5. INTELIGENTNY GENERATOR OPARTY O PARY W ZAKRESIE ---
+  # --- FUNKCJA GENERUJĄCA WSPÓŁWYSTĘPOWANIE ---
   def get_cooccurrence_recommendations(session_time, parity_type, limit, seed):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
@@ -513,86 +408,145 @@ if df is not None and not df.empty:
     return sorted(selected, key=lambda x: int(x))[:limit]
 
 
-  st.subheader(
-      "🎯 Generator Zakładów (Analiza Par i Współwystępowania w Zakresie)"
-  )
-  st.caption(
-      "Generator od 1 do 10 liczb, który dobiera numery na podstawie tego, jak"
-      " silnie współwystępują w parach w wybranym zakresie losowań."
-  )
-
-
   def format_clean_list(num_list):
     return " ".join([f"{int(n):02d}" if n.isdigit() else n for n in num_list])
 
 
-  def render_generator_section(
-      title, session_time, parity_type, key_prefix, has_priority=False
-  ):
-    priority_badge = " ✅ [Rekomendowany Priorytet]" if has_priority else ""
-    st.markdown(f"🎯 **{title}{priority_badge}**")
-
-    col_btn, col_slider = st.columns([1, 3])
-    seed_key = f"seed_{key_prefix}"
-    if seed_key not in st.session_state:
-      st.session_state[seed_key] = 42
-
-    with col_btn:
-      if st.button("🎲 Generuj", key=f"btn_{key_prefix}", use_container_width=True):
-        st.session_state[seed_key] = random.randint(1, 10000)
-
-    with col_slider:
-      limit = st.slider(
-          "Liczba liczb",
-          1,
-          10,
-          5,
-          key=f"slider_{key_prefix}",
-          label_visibility="collapsed",
-      )
-
-    generated_nums = get_cooccurrence_recommendations(
-        session_time, parity_type, limit, st.session_state[seed_key]
-    )
-    st.code(
-        format_clean_list(generated_nums)
-        if generated_nums
-        else "Brak danych w wybranym zakresie",
-        language=None,
-    )
-
-
-  render_generator_section(
-      "Rekomendowany Zakład: Parzyste (14:00)", "14:00", "even", "e14", False
+  # --- 3. TOP 15 ORAZ AUTOMATYCZNE KUPONY (14:00) ---
+  st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
+  hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
+  hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
+  st.markdown(
+      f"**Top 15 Parzyste** *(Trafienia w ost. losowaniu: {hits_14_e}/15)*:"
   )
-  render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (14:00)", "14:00", "odd", "o14", False
+  st.code(
+      format_top15_list(even_14, latest_nums_14)
+      if even_14
+      else "Brak danych",
+      language=None,
   )
-  render_generator_section(
-      "Rekomendowany Zakład: Mieszany (14:00) [Zrównoważony 50/50]",
-      "14:00",
-      "mixed",
-      "m14",
-      True,
+  st.markdown(
+      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/15)*:"
+  )
+  st.code(
+      format_top15_list(odd_14, latest_nums_14) if odd_14 else "Brak danych",
+      language=None,
   )
 
-  render_generator_section(
-      "Rekomendowany Zakład: Parzyste (22:00)",
-      "22:00",
-      "even",
-      "e22",
-      True,
+  # Automatyczne gotowe kupony dla 14:00
+  st.markdown("🎲 **Gotowe Kupony (Sesja 14:00):**")
+  st.caption("4 kupony po 10 liczb oraz 4 kupony po 5 liczb oparte na parach.")
+
+  col_t14_1, col_t14_2 = st.columns(2)
+  with col_t14_1:
+    st.markdown("*Zakłady po 10 liczb:*")
+    for i in range(4):
+      c_10 = get_cooccurrence_recommendations("14:00", "mixed", 10, 100 + i)
+      st.code(format_clean_list(c_10), language=None)
+
+  with col_t14_2:
+    st.markdown("*Zakłady po 5 liczb:*")
+    for i in range(4):
+      c_5 = get_cooccurrence_recommendations("14:00", "mixed", 5, 200 + i)
+      st.code(format_clean_list(c_5), language=None)
+
+  st.divider()
+
+  # --- 4. TOP 15 ORAZ AUTOMATYCZNE KUPONY (22:00) ---
+  st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
+  hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
+  hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
+  st.markdown(
+      "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
+      f" *(Trafienia w ost. losowaniu: {hits_22_e}/15)*:"
   )
-  render_generator_section(
-      "Rekomendowany Zakład: Nieparzyste (22:00)", "22:00", "odd", "o22", False
+  st.code(
+      format_top15_list(even_22, latest_nums_22)
+      if even_22
+      else "Brak danych",
+      language=None,
   )
-  render_generator_section(
-      "Rekomendowany Zakład: Mieszany (22:00) [Zbalansowany z przewagą"
-      " parzystych]",
-      "22:00",
-      "mixed",
-      "m22",
-      True,
+  st.markdown(
+      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/15)*:"
+  )
+  st.code(
+      format_top15_list(odd_22, latest_nums_22) if odd_22 else "Brak danych",
+      language=None,
+  )
+
+  # Automatyczne gotowe kupony dla 22:00
+  st.markdown("🎲 **Gotowe Kupony (Sesja 22:00):**")
+  st.caption("4 kupony po 10 liczb oraz 4 kupony po 5 liczb oparte na parach.")
+
+  col_t22_1, col_t22_2 = st.columns(2)
+  with col_t22_1:
+    st.markdown("*Zakłady po 10 liczb:*")
+    for i in range(4):
+      c_10 = get_cooccurrence_recommendations("22:00", "mixed", 10, 300 + i)
+      st.code(format_clean_list(c_10), language=None)
+
+  with col_t22_2:
+    st.markdown("*Zakłady po 5 liczb:*")
+    for i in range(4):
+      c_5 = get_cooccurrence_recommendations("22:00", "mixed", 5, 400 + i)
+      st.code(format_clean_list(c_5), language=None)
+
+  st.divider()
+
+  # --- 5. ANALIZA PAR I TRÓJEK (WSPÓŁWYSTĘPOWANIE) ---
+  st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
+  st.caption(
+      "Najczęściej występujące kombinacje liczb w tym samym losowaniu z"
+      f" wybranego zakresu ({zakres} losowań)."
+  )
+
+  selected_session_for_tuples = st.selectbox(
+      "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
+  )
+  df_tuples_session = df_analyzed[
+      df_analyzed["Godzina"] == selected_session_for_tuples
+  ]
+
+
+  def get_top_tuples(df_session, n_size, limit=5):
+    counter = Counter()
+    for row_vals in df_session.iloc[:, 3:].values:
+      draw_nums = []
+      for val in row_vals:
+        if pd.notna(val) and str(val).strip():
+          cleaned_v = str(val).replace(".0", "").strip()
+          if cleaned_v.isdigit():
+            draw_nums.append(f"{int(cleaned_v):02d}")
+      if len(draw_nums) >= n_size:
+        sorted_nums = sorted(list(set(draw_nums)), key=lambda x: int(x))
+        for comb in combinations(sorted_nums, n_size):
+          counter[comb] += 1
+    return counter.most_common(limit)
+
+
+  top_pairs = get_top_tuples(df_tuples_session, 2, 5)
+  top_triplets = get_top_tuples(df_tuples_session, 3, 5)
+
+  st.markdown(f"**Top 5 Par (Sesja {selected_session_for_tuples}):**")
+  pairs_display = [
+      f"({' - '.join(pair)}) [wystąpiły {cnt}x]" for pair, cnt in top_pairs
+  ]
+  st.code(
+      "\n".join(pairs_display)
+      if pairs_display
+      else "Za mało danych w zakresie",
+      language=None,
+  )
+
+  st.markdown(f"**Top 5 Trójek (Sesja {selected_session_for_tuples}):**")
+  triplets_display = [
+      f"({' - '.join(trip)}) [wystąpiły {cnt}x]" for trip, cnt in top_triplets
+  ]
+  st.code(
+      "\n".join(triplets_display)
+      if triplets_display
+      else "Za mało danych w zakresie",
+      language=None,
   )
 
   st.divider()

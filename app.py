@@ -264,17 +264,21 @@ if df is not None and not df.empty:
     }
 
 
-  def format_top10_list(num_list, session_latest_nums):
+  def format_top15_list(num_list, session_latest_nums):
     res = []
     for n_str in num_list:
       if n_str in session_latest_nums:
         res.append(f"{n_str}✅")
       else:
         res.append(f"{n_str}")
+    if len(res) > 8:
+      line1 = " ".join(res[:8])
+      line2 = " ".join(res[8:])
+      return f"{line1}\n{line2}"
     return " ".join(res)
 
 
-  def get_session_top10(session_time):
+  def get_session_top15(session_time):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
       return [], []
@@ -293,30 +297,33 @@ if df is not None and not df.empty:
     odd_counts = counts[
         counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
     ]
-    return even_counts.head(10).index.tolist(), odd_counts.head(10).index.tolist()
+    return (
+        even_counts.head(15).index.tolist(),
+        odd_counts.head(15).index.tolist(),
+    )
 
 
-  even_14, odd_14 = get_session_top10("14:00")
-  even_22, odd_22 = get_session_top10("22:00")
+  even_14, odd_14 = get_session_top15("14:00")
+  even_22, odd_22 = get_session_top15("22:00")
 
-  # --- 3. TOP 10 PARZYSTE I NIEPARZYSTE (14:00 oraz 22:00) ---
+  # --- 3. TOP 15 PARZYSTE I NIEPARZYSTE (14:00 oraz 22:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
   hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
   st.markdown(
-      f"**Top 10 Parzyste** *(Trafienia w ost. losowaniu: {hits_14_e}/10)*:"
+      f"**Top 15 Parzyste** *(Trafienia w ost. losowaniu: {hits_14_e}/15)*:"
   )
   st.code(
-      format_top10_list(even_14, latest_nums_14)
+      format_top15_list(even_14, latest_nums_14)
       if even_14
       else "Brak danych",
       language=None,
   )
   st.markdown(
-      f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/10)*:"
+      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_14_o}/15)*:"
   )
   st.code(
-      format_top10_list(odd_14, latest_nums_14) if odd_14 else "Brak danych",
+      format_top15_list(odd_14, latest_nums_14) if odd_14 else "Brak danych",
       language=None,
   )
 
@@ -326,20 +333,20 @@ if df is not None and not df.empty:
   hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
   hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
   st.markdown(
-      "**Top 10 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" *(Trafienia w ost. losowaniu: {hits_22_e}/10)*:"
+      "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
+      f" *(Trafienia w ost. losowaniu: {hits_22_e}/15)*:"
   )
   st.code(
-      format_top10_list(even_22, latest_nums_22)
+      format_top15_list(even_22, latest_nums_22)
       if even_22
       else "Brak danych",
       language=None,
   )
   st.markdown(
-      f"**Top 10 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/10)*:"
+      f"**Top 15 Nieparzyste** *(Trafienia w ost. losowaniu: {hits_22_o}/15)*:"
   )
   st.code(
-      format_top10_list(odd_22, latest_nums_22) if odd_22 else "Brak danych",
+      format_top15_list(odd_22, latest_nums_22) if odd_22 else "Brak danych",
       language=None,
   )
 

@@ -412,7 +412,7 @@ if df is not None and not df.empty:
     return " ".join([f"{int(n):02d}" if n.isdigit() else n for n in num_list])
 
 
-  # --- 3. TOP 15 ORAZ AUTOMATYCZNE KUPONY (14:00) ---
+  # --- 3. TOP 15 ORAZ GOTOWE KUPONY (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
   hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
@@ -433,26 +433,26 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # Automatyczne gotowe kupony dla 14:00
-  st.markdown("🎲 **Gotowe Kupony (Sesja 14:00):**")
-  st.caption("4 kupony po 10 liczb oraz 4 kupony po 5 liczb oparte na parach.")
+  st.markdown("🎲 **Gotowy Kupon (Sesja 14:00):**")
+  st.caption(
+      "Jeden zakład na 10 liczb oraz jeden zakład na 5 liczb oparty na"
+      " współwystępowaniu par."
+  )
 
   col_t14_1, col_t14_2 = st.columns(2)
   with col_t14_1:
-    st.markdown("*Zakłady po 10 liczb:*")
-    for i in range(4):
-      c_10 = get_cooccurrence_recommendations("14:00", "mixed", 10, 100 + i)
-      st.code(format_clean_list(c_10), language=None)
+    st.markdown("*Zakład na 10 liczb:*")
+    c_10 = get_cooccurrence_recommendations("14:00", "mixed", 10, 100)
+    st.code(format_clean_list(c_10), language=None)
 
   with col_t14_2:
-    st.markdown("*Zakłady po 5 liczb:*")
-    for i in range(4):
-      c_5 = get_cooccurrence_recommendations("14:00", "mixed", 5, 200 + i)
-      st.code(format_clean_list(c_5), language=None)
+    st.markdown("*Zakład na 5 liczb:*")
+    c_5 = get_cooccurrence_recommendations("14:00", "mixed", 5, 200)
+    st.code(format_clean_list(c_5), language=None)
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ AUTOMATYCZNE KUPONY (22:00) ---
+  # --- 4. TOP 15 ORAZ GOTOWE KUPONY (22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
   hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
   hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
@@ -474,22 +474,22 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # Automatyczne gotowe kupony dla 22:00
-  st.markdown("🎲 **Gotowe Kupony (Sesja 22:00):**")
-  st.caption("4 kupony po 10 liczb oraz 4 kupony po 5 liczb oparte na parach.")
+  st.markdown("🎲 **Gotowy Kupon (Sesja 22:00):**")
+  st.caption(
+      "Jeden zakład na 10 liczb oraz jeden zakład na 5 liczb oparty na"
+      " współwystępowaniu par."
+  )
 
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
-    st.markdown("*Zakłady po 10 liczb:*")
-    for i in range(4):
-      c_10 = get_cooccurrence_recommendations("22:00", "mixed", 10, 300 + i)
-      st.code(format_clean_list(c_10), language=None)
+    st.markdown("*Zakład na 10 liczb:*")
+    c_10_22 = get_cooccurrence_recommendations("22:00", "mixed", 10, 300)
+    st.code(format_clean_list(c_10_22), language=None)
 
   with col_t22_2:
-    st.markdown("*Zakłady po 5 liczb:*")
-    for i in range(4):
-      c_5 = get_cooccurrence_recommendations("22:00", "mixed", 5, 400 + i)
-      st.code(format_clean_list(c_5), language=None)
+    st.markdown("*Zakład na 5 liczb:*")
+    c_5_22 = get_cooccurrence_recommendations("22:00", "mixed", 5, 400)
+    st.code(format_clean_list(c_5_22), language=None)
 
   st.divider()
 

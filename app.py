@@ -139,7 +139,54 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 if df is not None and not df.empty:
   total_draws = len(df)
 
-  # --- 1. USTAWIENIA ANALIZI ---
+  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ (NA GÓRZE) ---
+  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
+  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
+
+  recent_df = df.tail(5).iloc[::-1]
+  for i in range(len(recent_df) - 1):
+    curr = recent_df.iloc[i]
+    prev = recent_df.iloc[i + 1]
+
+    curr_nums = [
+        val
+        for val in curr.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+    prev_nums = [
+        val
+        for val in prev.iloc[3:].values
+        if pd.notna(val) and str(val).strip()
+    ]
+
+    curr_set = set(curr_nums)
+    prev_set = set(prev_nums)
+    repeated = curr_set.intersection(prev_set)
+
+    draw_id = curr["ID"]
+    date_str = curr["Data"]
+    time_str = curr["Godzina"]
+
+    st.markdown(
+        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
+    )
+
+    formatted_display = []
+    for val in curr_nums:
+      val_clean = str(val).replace(".0", "").strip()
+      val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
+      if val in repeated or val_clean in repeated:
+        formatted_display.append(f"🔄{val_str}")
+      else:
+        formatted_display.append(f"{val_str}")
+
+    line1 = " ".join(formatted_display[:10])
+    line2 = " ".join(formatted_display[10:])
+    st.code(f"{line1}\n{line2}", language=None)
+
+  st.divider()
+
+  # --- 2. USTAWIENIA ANALIZY / SUWAK (BLISKO STATYSTYK) ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   preset_steps = [1, 5, 10, 15, 20, 30, 40, 50, 100, 200, total_draws]
@@ -188,53 +235,6 @@ if df is not None and not df.empty:
       f" {'losowań' if zakres < total_draws else '(Wszystkie losowania)'}"
   )
   df_analyzed = df.tail(int(zakres))
-
-  st.divider()
-
-  # --- 2. ARCHIWUM OSTATNICH LOSOWAŃ ---
-  st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
-  st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
-
-  recent_df = df.tail(5).iloc[::-1]
-  for i in range(len(recent_df) - 1):
-    curr = recent_df.iloc[i]
-    prev = recent_df.iloc[i + 1]
-
-    curr_nums = [
-        val
-        for val in curr.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-    prev_nums = [
-        val
-        for val in prev.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-
-    curr_set = set(curr_nums)
-    prev_set = set(prev_nums)
-    repeated = curr_set.intersection(prev_set)
-
-    draw_id = curr["ID"]
-    date_str = curr["Data"]
-    time_str = curr["Godzina"]
-
-    st.markdown(
-        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
-    )
-
-    formatted_display = []
-    for val in curr_nums:
-      val_clean = str(val).replace(".0", "").strip()
-      val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
-      if val in repeated or val_clean in repeated:
-        formatted_display.append(f"🔄{val_str}")
-      else:
-        formatted_display.append(f"{val_str}")
-
-    line1 = " ".join(formatted_display[:10])
-    line2 = " ".join(formatted_display[10:])
-    st.code(f"{line1}\n{line2}", language=None)
 
   st.divider()
 
@@ -452,7 +452,7 @@ if df is not None and not df.empty:
           for other in candidates
           if other != c
       )
-      scores[c] = ind_freq * 1.0 + pair_weight * 1.5  # Silny nacisk na pary!
+      scores[c] = ind_freq * 1.0 + pair_weight * 1.5
 
     sorted_candidates = sorted(
         candidates, key=lambda x: scores.get(x, 0), reverse=True
@@ -462,7 +462,6 @@ if df is not None and not df.empty:
     if not sorted_candidates:
       return []
 
-    # Zachłanny wybór liczb najlepiej współwystępujących ze sobą
     selected = [sorted_candidates[0]]
 
     while len(selected) < limit and len(selected) < len(sorted_candidates):

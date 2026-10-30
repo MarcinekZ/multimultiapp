@@ -65,8 +65,8 @@ def load_data():
 
   df_csv = None
   for fname in [
-      "multi_multi (10).csv",
-      "multi_multi (11).csv",
+      "multi_multi (14).csv",
+      "multi_multi (13).csv",
       "multi_multi (12).csv",
       "multi_multi.csv",
   ]:
@@ -307,93 +307,78 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- FUNKCJA GENERUJĄCA WSPÓŁWYSTĘPOWANIE ---
-  def get_cooccurrence_recommendations(session_time, parity_type, limit, seed):
-    df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
-    if df_session.empty:
+  # --- NOWA FUNKCJA GENERUJĄCA LICZBY WYSTĘPUJĄCE PO PRZESKOKACH (CYKL 24H) ---
+  def get_followers_after_jumps(session_time, limit, seed):
+    df_session = df[df["Godzina"] == session_time].tail(int(zakres) + 2)
+    if len(df_session) < 3:
       return []
 
-    pair_counter = Counter()
-    all_session_nums = []
+    rows = df_session.iloc[:, 3:].values
+    followers_score = Counter()
 
-    for row_vals in df_session.iloc[:, 3:].values:
-      draw_nums = []
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            num_int = int(cleaned_v)
-            draw_nums.append(f"{num_int:02d}")
-            all_session_nums.append(f"{num_int:02d}")
-      if draw_nums:
-        d_set = sorted(list(set(draw_nums)), key=lambda x: int(x))
-        for p in combinations(d_set, 2):
-          pair_counter[p] += 1
+    for i in range(1, len(rows) - 1):
+      d_prev = set([
+          f"{int(str(v).replace('.0', '').strip()):02d}"
+          for v in rows[i - 1]
+          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
+      ])
+      d_curr = set([
+          f"{int(str(v).replace('.0', '').strip()):02d}"
+          for v in rows[i]
+          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
+      ])
+      d_next = [
+          f"{int(str(v).replace('.0', '').strip()):02d}"
+          for v in rows[i + 1]
+          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
+      ]
 
-    counts = (
-        pd.Series(all_session_nums).value_counts()
-        if all_session_nums
-        else pd.Series(dtype=int)
-    )
+      # Szukamy przeskaków (czerwonych liczb w losowaniu N)
+      jumped = d_prev.intersection(d_curr)
 
-    all_even = [f"{n:02d}" for n in range(2, 81, 2)]
-    all_odd = [f"{n:02d}" for n in range(1, 80, 2)]
+      if jumped:
+        # Nagradzamy liczby w d_next z wagą uzależnioną od ilości przeskoków
+        for num in d_next:
+          followers_score[num] += len(jumped)
 
-    if parity_type == "even":
-      candidates = [n for n in all_even]
-    elif parity_type == "odd":
-      candidates = [n for n in all_odd]
-    else:
-      candidates = all_even + all_odd
+    sorted_candidates = [
+        num for num, score in followers_score.most_common()
+    ]
 
-    scores = {}
-    for c in candidates:
-      ind_freq = counts.get(c, 0)
-      pair_weight = sum(
-          pair_counter[tuple(sorted([c, other], key=lambda x: int(x)))]
-          for other in candidates
-          if other != c
-      )
-      scores[c] = ind_freq * 1.0 + pair_weight * 1.5
-
-    sorted_candidates = sorted(
-        candidates, key=lambda x: scores.get(x, 0), reverse=True
-    )
+    # Zapewnienie pełnej puli w razie małego zakresu
+    all_80 = [f"{n:02d}" for n in range(1, 81)]
+    for n in all_80:
+      if n not in sorted_candidates:
+        sorted_candidates.append(n)
 
     rng = random.Random(seed)
-    if not sorted_candidates:
-      return []
-
     selected = [sorted_candidates[0]]
 
     while len(selected) < limit and len(selected) < len(sorted_candidates):
       best_next = None
       best_score = -1
+
+      current_even = sum(1 for x in selected if int(x) % 2 == 0)
+      target_even = (
+          math.ceil(limit * 0.52)
+          if session_time == "22:00"
+          else math.ceil(limit / 2.0)
+      )
+
       for cand in sorted_candidates:
         if cand in selected:
           continue
 
-        if parity_type == "mixed":
-          current_even = sum(1 for x in selected if int(x) % 2 == 0)
-          target_even = (
-              math.ceil(limit * 0.52)
-              if session_time == "22:00"
-              else math.ceil(limit / 2.0)
-          )
-          if (
-              int(cand) % 2 == 0
-              and current_even >= target_even
-              and (limit - len(selected)) <= (limit - target_even)
-          ):
-            continue
+        if (
+            int(cand) % 2 == 0
+            and current_even >= target_even
+            and (limit - len(selected)) <= (limit - target_even)
+        ):
+          continue
 
-        synergy = sum(
-            pair_counter[tuple(sorted([cand, s], key=lambda x: int(x)))]
-            for s in selected
-        )
-        total_score = scores.get(cand, 0) + synergy * 3.0
-        if total_score > best_score:
-          best_score = total_score
+        cand_score = followers_score.get(cand, 0)
+        if cand_score > best_score:
+          best_score = cand_score
           best_next = cand
 
       if best_next:
@@ -412,7 +397,7 @@ if df is not None and not df.empty:
     return " ".join([f"{int(n):02d}" if n.isdigit() else n for n in num_list])
 
 
-  # --- 3. TOP 15 ORAZ GOTOWE KUPONY (14:00) ---
+  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00 ➡️ 14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
   hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14)
@@ -433,26 +418,29 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown("🎲 **Gotowy Kupon (Sesja 14:00):**")
+  st.markdown(
+      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 14:00 ➡️"
+      " 14:00):**"
+  )
   st.caption(
-      "Jeden zakład na 10 liczb oraz jeden zakład na 5 liczb oparty na"
-      " współwystępowaniu par."
+      "Zakłady dobrane z liczb, które statystycznie najczęściej padają po"
+      " wystąpieniu skoczków z popołudnia."
   )
 
   col_t14_1, col_t14_2 = st.columns(2)
   with col_t14_1:
-    st.markdown("*Zakład na 10 liczb:*")
-    c_10 = get_cooccurrence_recommendations("14:00", "mixed", 10, 100)
-    st.code(format_clean_list(c_10), language=None)
+    st.markdown("*Zakład na 10 liczb (14:00):*")
+    c_10_14 = get_followers_after_jumps("14:00", 10, 100)
+    st.code(format_clean_list(c_10_14), language=None)
 
   with col_t14_2:
-    st.markdown("*Zakład na 5 liczb:*")
-    c_5 = get_cooccurrence_recommendations("14:00", "mixed", 5, 200)
-    st.code(format_clean_list(c_5), language=None)
+    st.markdown("*Zakład na 5 liczb (14:00):*")
+    c_5_14 = get_followers_after_jumps("14:00", 5, 200)
+    st.code(format_clean_list(c_5_14), language=None)
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ GOTOWE KUPONY (22:00) ---
+  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00 ➡️ 22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
   hits_22_e = sum(1 for n in even_22 if n in latest_nums_22)
   hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22)
@@ -474,26 +462,29 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown("🎲 **Gotowy Kupon (Sesja 22:00):**")
+  st.markdown(
+      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 22:00 ➡️"
+      " 22:00):**"
+  )
   st.caption(
-      "Jeden zakład na 10 liczb oraz jeden zakład na 5 liczb oparty na"
-      " współwystępowaniu par."
+      "Zakłady dobrane z liczb, które statystycznie najczęściej padają po"
+      " wystąpieniu skoczków z wieczora."
   )
 
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
-    st.markdown("*Zakład na 10 liczb:*")
-    c_10_22 = get_cooccurrence_recommendations("22:00", "mixed", 10, 300)
+    st.markdown("*Zakład na 10 liczb (22:00):*")
+    c_10_22 = get_followers_after_jumps("22:00", 10, 300)
     st.code(format_clean_list(c_10_22), language=None)
 
   with col_t22_2:
-    st.markdown("*Zakład na 5 liczb:*")
-    c_5_22 = get_cooccurrence_recommendations("22:00", "mixed", 5, 400)
+    st.markdown("*Zakład na 5 liczb (22:00):*")
+    c_5_22 = get_followers_after_jumps("22:00", 5, 400)
     st.code(format_clean_list(c_5_22), language=None)
 
   st.divider()
 
-  # --- 5. ANALIZA PAR I TRÓJEK (WSPÓŁWYSTĘPOWANIE) ---
+  # --- 5. ANALIZA PAR I TRÓJEK ---
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
   st.caption(
       "Najczęściej występujące kombinacje liczb w tym samym losowaniu z"

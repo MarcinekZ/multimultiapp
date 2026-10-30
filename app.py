@@ -1,4 +1,5 @@
 from collections import Counter
+import glob
 from itertools import combinations
 import math
 import random
@@ -7,7 +8,7 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Multi Multi Analytics PWA", page_icon="🎯", layout="wide"
+    page_title="Mobilny Panel Analityczny Ekipy", page_icon="🎯", layout="wide"
 )
 
 
@@ -26,7 +27,7 @@ def load_data():
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.lotto.pl/multi-multi/wyniki",
     }
-    res = session.get(api_url, headers=headers, timeout=10)
+    res = session.get(api_url, headers=headers, timeout=5)
 
     if res.status_code == 200:
       data = res.json()
@@ -64,23 +65,23 @@ def load_data():
     pass
 
   df_csv = None
-  for fname in [
-      "multi_multi (14).csv",
-      "multi_multi (13).csv",
-      "multi_multi (12).csv",
-      "multi_multi.csv",
-  ]:
+  # Automatyczne szukanie Dowolnego pliku CSV w folderze projektu na GitHubie
+  csv_files = glob.glob("*.csv")
+  for fname in csv_files:
     try:
       df_csv = pd.read_csv(fname, header=None)
-      break
-    except FileNotFoundError:
+      if not df_csv.empty:
+        break
+    except Exception:
       continue
 
   if df_live is not None and not df_live.empty:
     st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
     df = df_live
   elif df_csv is not None and not df_csv.empty:
-    st.sidebar.error("🔴 Status: Plik lokalny CSV (Tryb awaryjny)")
+    st.sidebar.error(
+        "🔴 Status: Plik lokalny CSV (Tryb awaryjny - stabilny)"
+    )
     df = df_csv
   else:
     return None
@@ -307,7 +308,7 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- NOWA FUNKCJA GENERUJĄCA LICZBY WYSTĘPUJĄCE PO PRZESKOKACH (CYKL 24H) ---
+  # --- FUNKCJA GENERUJĄCA LICZBY PO PRZESKOKACH (CYKL 24H) ---
   def get_followers_after_jumps(session_time, limit, seed):
     df_session = df[df["Godzina"] == session_time].tail(int(zakres) + 2)
     if len(df_session) < 3:
@@ -333,19 +334,14 @@ if df is not None and not df.empty:
           if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
       ]
 
-      # Szukamy przeskaków (czerwonych liczb w losowaniu N)
       jumped = d_prev.intersection(d_curr)
-
       if jumped:
-        # Nagradzamy liczby w d_next z wagą uzależnioną od ilości przeskoków
         for num in d_next:
           followers_score[num] += len(jumped)
 
     sorted_candidates = [
         num for num, score in followers_score.most_common()
     ]
-
-    # Zapewnienie pełnej puli w razie małego zakresu
     all_80 = [f"{n:02d}" for n in range(1, 81)]
     for n in all_80:
       if n not in sorted_candidates:
@@ -368,7 +364,6 @@ if df is not None and not df.empty:
       for cand in sorted_candidates:
         if cand in selected:
           continue
-
         if (
             int(cand) % 2 == 0
             and current_even >= target_even
@@ -422,11 +417,6 @@ if df is not None and not df.empty:
       "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 14:00 ➡️"
       " 14:00):**"
   )
-  st.caption(
-      "Zakłady dobrane z liczb, które statystycznie najczęściej padają po"
-      " wystąpieniu skoczków z popołudnia."
-  )
-
   col_t14_1, col_t14_2 = st.columns(2)
   with col_t14_1:
     st.markdown("*Zakład na 10 liczb (14:00):*")
@@ -466,11 +456,6 @@ if df is not None and not df.empty:
       "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 22:00 ➡️"
       " 22:00):**"
   )
-  st.caption(
-      "Zakłady dobrane z liczb, które statystycznie najczęściej padają po"
-      " wystąpieniu skoczków z wieczora."
-  )
-
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
     st.markdown("*Zakład na 10 liczb (22:00):*")
@@ -486,11 +471,6 @@ if df is not None and not df.empty:
 
   # --- 5. ANALIZA PAR I TRÓJEK ---
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
-  st.caption(
-      "Najczęściej występujące kombinacje liczb w tym samym losowaniu z"
-      f" wybranego zakresu ({zakres} losowań)."
-  )
-
   selected_session_for_tuples = st.selectbox(
       "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
   )

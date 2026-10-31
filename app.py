@@ -65,7 +65,6 @@ def load_data():
     pass
 
   df_csv = None
-  # Automatyczne szukanie Dowolnego pliku CSV w folderze projektu na GitHubie
   csv_files = glob.glob("*.csv")
   for fname in csv_files:
     try:
@@ -279,6 +278,19 @@ if df is not None and not df.empty:
     return " ".join(res)
 
 
+  def format_coupon_list(num_list, session_latest_nums):
+    res = []
+    for n in num_list:
+      n_clean = (
+          f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n)
+      )
+      if n_clean in session_latest_nums:
+        res.append(f"{n_clean}✅")
+      else:
+        res.append(f"{n_clean}")
+    return " ".join(res)
+
+
   def get_session_top15(session_time):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
@@ -388,10 +400,6 @@ if df is not None and not df.empty:
     return sorted(selected, key=lambda x: int(x))[:limit]
 
 
-  def format_clean_list(num_list):
-    return " ".join([f"{int(n):02d}" if n.isdigit() else n for n in num_list])
-
-
   # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00 ➡️ 14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
   hits_14_e = sum(1 for n in even_14 if n in latest_nums_14)
@@ -417,16 +425,31 @@ if df is not None and not df.empty:
       "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 14:00 ➡️"
       " 14:00):**"
   )
+
+  c_10_14 = get_followers_after_jumps("14:00", 10, 100)
+  c_5_14 = get_followers_after_jumps("14:00", 5, 200)
+
+  hits_c10_14 = sum(
+      1
+      for n in c_10_14
+      if (f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n))
+      in latest_nums_14
+  )
+  hits_c5_14 = sum(
+      1
+      for n in c_5_14
+      if (f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n))
+      in latest_nums_14
+  )
+
   col_t14_1, col_t14_2 = st.columns(2)
   with col_t14_1:
-    st.markdown("*Zakład na 10 liczb (14:00):*")
-    c_10_14 = get_followers_after_jumps("14:00", 10, 100)
-    st.code(format_clean_list(c_10_14), language=None)
+    st.markdown(f"*Zakład na 10 liczb (Trafienia: {hits_c10_14}/10):*")
+    st.code(format_coupon_list(c_10_14, latest_nums_14), language=None)
 
   with col_t14_2:
-    st.markdown("*Zakład na 5 liczb (14:00):*")
-    c_5_14 = get_followers_after_jumps("14:00", 5, 200)
-    st.code(format_clean_list(c_5_14), language=None)
+    st.markdown(f"*Zakład na 5 liczb (Trafienia: {hits_c5_14}/5):*")
+    st.code(format_coupon_list(c_5_14, latest_nums_14), language=None)
 
   st.divider()
 
@@ -456,16 +479,31 @@ if df is not None and not df.empty:
       "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 22:00 ➡️"
       " 22:00):**"
   )
+
+  c_10_22 = get_followers_after_jumps("22:00", 10, 300)
+  c_5_22 = get_followers_after_jumps("22:00", 5, 400)
+
+  hits_c10_22 = sum(
+      1
+      for n in c_10_22
+      if (f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n))
+      in latest_nums_22
+  )
+  hits_c5_22 = sum(
+      1
+      for n in c_5_22
+      if (f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n))
+      in latest_nums_22
+  )
+
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
-    st.markdown("*Zakład na 10 liczb (22:00):*")
-    c_10_22 = get_followers_after_jumps("22:00", 10, 300)
-    st.code(format_clean_list(c_10_22), language=None)
+    st.markdown(f"*Zakład na 10 liczb (Trafienia: {hits_c10_22}/10):*")
+    st.code(format_coupon_list(c_10_22, latest_nums_22), language=None)
 
   with col_t22_2:
-    st.markdown("*Zakład na 5 liczb (22:00):*")
-    c_5_22 = get_followers_after_jumps("22:00", 5, 400)
-    st.code(format_clean_list(c_5_22), language=None)
+    st.markdown(f"*Zakład na 5 liczb (Trafienia: {hits_c5_22}/5):*")
+    st.code(format_coupon_list(c_5_22, latest_nums_22), language=None)
 
   st.divider()
 

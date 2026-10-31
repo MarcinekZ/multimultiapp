@@ -1,4 +1,5 @@
 from collections import Counter
+import datetime
 import glob
 from itertools import combinations
 import math
@@ -138,6 +139,7 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 
 if df is not None and not df.empty:
   total_draws = len(df)
+  today_str = datetime.date.today().strftime("%d.%m.%Y")
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -241,7 +243,7 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
-  # Ostatnie losowanie 14:00
+  # Ostatnie losowanie 14:00 w bazie
   latest_nums_14 = set()
   last_date_14 = ""
   if not df_14_all.empty:
@@ -255,7 +257,7 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Ostatnie losowanie 22:00
+  # Ostatnie losowanie 22:00 w bazie
   latest_nums_22 = set()
   last_date_22 = ""
   if not df_22_all.empty:
@@ -269,26 +271,13 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  show_ticks_14 = False
-  show_ticks_22 = False
+  # Top 15 zawsze pokazuje weryfikację z ostatniego zakończonego losowania w bazie
+  show_ticks_top15_14 = True if latest_nums_14 else False
+  show_ticks_top15_22 = True if latest_nums_22 else False
 
-  if last_date_14 and last_date_22:
-    if last_date_14 == last_date_22:
-      last_overall_hour = df.iloc[-1]["Godzina"]
-      if last_overall_hour == "22:00":
-        show_ticks_22 = True
-        show_ticks_14 = False
-      else:
-        show_ticks_14 = True
-        show_ticks_22 = False
-    elif last_date_14 > last_date_22:
-      show_ticks_14 = True
-      show_ticks_22 = False
-    else:
-      show_ticks_22 = True
-      show_ticks_14 = False
-  elif last_date_22:
-    show_ticks_22 = True
+  # Kupony sprawdzają, czy dzisiejsze losowanie jest już zaktualizowane w bazie
+  show_ticks_coupon_14 = True if (last_date_14 == today_str) else False
+  show_ticks_coupon_22 = True if (last_date_22 == today_str) else False
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -347,13 +336,12 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- ROZBUDOWANY GENERATOR: PRZESKOKI + ZIMNE LICZBY (3-4 LOSOWANIA) + ROZPIĘTOŚĆ DEKAD ---
+  # --- ROZBUDOWANY GENERATOR: PRZESKOKI + ZIMNE LICZBY + ROZPIĘTOŚĆ DEKAD ---
   def get_followers_with_filters(session_time, limit, seed):
     df_session = df[df["Godzina"] == session_time]
     if len(df_session) < 5:
       return [f"{i:02d}" for i in range(1, limit + 1)]
 
-    # 1. Wykrywanie liczb ZIMNYCH (nieobecnych w ostatnich 4 losowaniach danej sesji)
     recent_session_rows = df_session.tail(4)
     recent_session_nums = set()
     for row_vals in recent_session_rows.iloc[:, 3:].values:
@@ -366,7 +354,6 @@ if df is not None and not df.empty:
     all_80 = [f"{n:02d}" for n in range(1, 81)]
     cold_pool = {n for n in all_80 if n not in recent_session_nums}
 
-    # 2. Analiza następstw po przeskokach w wybranym zakresie
     df_analyzed_session = df_session.tail(int(zakres) + 2)
     rows = df_analyzed_session.iloc[:, 3:].values
     followers_score = Counter()
@@ -393,11 +380,9 @@ if df is not None and not df.empty:
         for num in d_next:
           followers_score[num] += len(jumped)
 
-    # 3. Łączenie punktacji: premiujemy liczby zimne, które jednocześnie mają wysoki wynik po przeskokach
     combined_scores = {}
     for n in all_80:
       base_score = followers_score.get(n, 1)
-      # Premia dla zimnych liczb (np. mnożnik 1.5x jeśli nie było ich w ostatnich 4 losowaniach)
       if n in cold_pool:
         combined_scores[n] = base_score * 1.5
       else:
@@ -410,41 +395,32 @@ if df is not None and not df.empty:
     rng = random.Random(seed)
     selected = []
 
-    # Pomocnicza funkcja do dekad (0 do 7, gdzie 0 to 1-10, 1 to 11-20 itd.)
     def get_decade(num_str):
       return (int(num_str) - 1) // 10
 
-    # REGUŁY SESJI 22:00 vs 14:00 z uwzględnieniem równomiernego rozproszenia dekad
     if session_time == "22:00":
       if limit == 10:
-        # Zakład na 10 liczb: TYLKO PARZYSTE + rozproszenie po dekadach
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
-        # Wybieraj tak, aby maksymalnie rozproszyć po dekadach (max 2 z jednej dekady na start)
         decade_counts = {d: 0 for d in range(8)}
         for c in even_pool:
           dec = get_decade(c)
           if decade_counts[dec] < 2 and len(selected) < 10:
             selected.append(c)
             decade_counts[dec] += 1
-        # Jeśli zabrakło do 10, dobierz z puli parzystych bez limitu dekad
         for c in even_pool:
           if len(selected) < 10 and c not in selected:
             selected.append(c)
-
       elif limit == 5:
-        # Zakład na 5 liczb: MIESZANE (3 parzyste, 2 nieparzyste)
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
         odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
         selected = even_pool[:3] + odd_pool[:2]
     else:
-      # Sesja 14:00: zbalansowany kupon z mocnym naciskiem na rozproszenie po dekadach
       decade_counts = {d: 0 for d in range(8)}
       for c in sorted_candidates:
         dec = get_decade(c)
         if decade_counts[dec] < (2 if limit == 10 else 1) and len(selected) < limit:
           selected.append(c)
           decade_counts[dec] += 1
-      # Dopełnienie w razie potrzeby
       for c in sorted_candidates:
         if len(selected) < limit and c not in selected:
           selected.append(c)
@@ -456,28 +432,26 @@ if df is not None and not df.empty:
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   hits_14_e = (
-      sum(1 for n in even_14 if n in latest_nums_14) if show_ticks_14 else 0
+      sum(1 for n in even_14 if n in latest_nums_14)
+      if show_ticks_top15_14
+      else 0
   )
   hits_14_o = (
-      sum(1 for n in odd_14 if n in latest_nums_14) if show_ticks_14 else 0
+      sum(1 for n in odd_14 if n in latest_nums_14)
+      if show_ticks_top15_14
+      else 0
   )
 
-  st.markdown(
-      "**Top 15 Parzyste**"
-      f" {f'*(Trafienia: {hits_14_e}/15)*' if show_ticks_14 else '*(Oczekiwanie na dzisiejsze losowanie)*'}:"
-  )
+  st.markdown(f"**Top 15 Parzyste** *(Trafienia: {hits_14_e}/15)*:")
   st.code(
-      format_top15_list(even_14, latest_nums_14, show_ticks_14)
+      format_top15_list(even_14, latest_nums_14, show_ticks_top15_14)
       if even_14
       else "Brak danych",
       language=None,
   )
-  st.markdown(
-      "**Top 15 Nieparzyste**"
-      f" {f'*(Trafienia: {hits_14_o}/15)*' if show_ticks_14 else '*(Oczekiwanie na dzisiejsze losowanie)*'}:"
-  )
+  st.markdown(f"**Top 15 Nieparzyste** *(Trafienia: {hits_14_o}/15)*:")
   st.code(
-      format_top15_list(odd_14, latest_nums_14, show_ticks_14)
+      format_top15_list(odd_14, latest_nums_14, show_ticks_top15_14)
       if odd_14
       else "Brak danych",
       language=None,
@@ -502,7 +476,7 @@ if df is not None and not df.empty:
           )
           in latest_nums_14
       )
-      if show_ticks_14
+      if show_ticks_coupon_14
       else 0
   )
   hits_c5_14 = (
@@ -516,7 +490,7 @@ if df is not None and not df.empty:
           )
           in latest_nums_14
       )
-      if show_ticks_14
+      if show_ticks_coupon_14
       else 0
   )
 
@@ -524,23 +498,27 @@ if df is not None and not df.empty:
   with col_t14_1:
     label_10_14 = (
         f"*Zakład na 10 liczb (Trafienia: {hits_c10_14}/10):*"
-        if show_ticks_14
-        else "*Zakład na 10 liczb (Oczekuje na losowanie):*"
+        if show_ticks_coupon_14
+        else "*Zakład na 10 liczb (Oczekuje na dzisiejsze losowanie):*"
     )
     st.markdown(label_10_14)
     st.code(
-        format_coupon_list(c_10_14, latest_nums_14, show_ticks_14), language=None
+        format_coupon_list(
+            c_10_14, latest_nums_14, show_ticks_coupon_14
+        ),
+        language=None,
     )
 
   with col_t14_2:
     label_5_14 = (
         f"*Zakład na 5 liczb (Trafienia: {hits_c5_14}/5):*"
-        if show_ticks_14
-        else "*Zakład na 5 liczb (Oczekuje na losowanie):*"
+        if show_ticks_coupon_14
+        else "*Zakład na 5 liczb (Oczekuje na dzisiejsze losowanie):*"
     )
     st.markdown(label_5_14)
     st.code(
-        format_coupon_list(c_5_14, latest_nums_14, show_ticks_14), language=None
+        format_coupon_list(c_5_14, latest_nums_14, show_ticks_coupon_14),
+        language=None,
     )
 
   st.divider()
@@ -549,28 +527,29 @@ if df is not None and not df.empty:
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   hits_22_e = (
-      sum(1 for n in even_22 if n in latest_nums_22) if show_ticks_22 else 0
+      sum(1 for n in even_22 if n in latest_nums_22)
+      if show_ticks_top15_22
+      else 0
   )
   hits_22_o = (
-      sum(1 for n in odd_22 if n in latest_nums_22) if show_ticks_22 else 0
+      sum(1 for n in odd_22 if n in latest_nums_22)
+      if show_ticks_top15_22
+      else 0
   )
 
   st.markdown(
       "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" {f'*(Trafienia: {hits_22_e}/15)*' if show_ticks_22 else '*(Oczekiwanie na dzisiejsze losowanie)*'}:"
+      f" *(Trafienia: {hits_22_e}/15)*:"
   )
   st.code(
-      format_top15_list(even_22, latest_nums_22, show_ticks_22)
+      format_top15_list(even_22, latest_nums_22, show_ticks_top15_22)
       if even_22
       else "Brak danych",
       language=None,
   )
-  st.markdown(
-      "**Top 15 Nieparzyste**"
-      f" {f'*(Trafienia: {hits_22_o}/15)*' if show_ticks_22 else '*(Oczekiwanie na dzisiejsze losowanie)*'}:"
-  )
+  st.markdown(f"**Top 15 Nieparzyste** *(Trafienia: {hits_22_o}/15)*:")
   st.code(
-      format_top15_list(odd_22, latest_nums_22, show_ticks_22)
+      format_top15_list(odd_22, latest_nums_22, show_ticks_top15_22)
       if odd_22
       else "Brak danych",
       language=None,
@@ -595,7 +574,7 @@ if df is not None and not df.empty:
           )
           in latest_nums_22
       )
-      if show_ticks_22
+      if show_ticks_coupon_22
       else 0
   )
   hits_c5_22 = (
@@ -609,7 +588,7 @@ if df is not None and not df.empty:
           )
           in latest_nums_22
       )
-      if show_ticks_22
+      if show_ticks_coupon_22
       else 0
   )
 
@@ -617,26 +596,33 @@ if df is not None and not df.empty:
   with col_t22_1:
     label_10_22 = (
         f"*Zakład na 10 liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/10):*"
-        if show_ticks_22
+        if show_ticks_coupon_22
         else (
             "*Zakład na 10 liczb (Parzyste + Dekady) (Oczekuje na"
-            " losowanie):*"
+            " dzisiejsze losowanie):*"
         )
     )
     st.markdown(label_10_22)
     st.code(
-        format_coupon_list(c_10_22, latest_nums_22, show_ticks_22), language=None
+        format_coupon_list(
+            c_10_22, latest_nums_22, show_ticks_coupon_22
+        ),
+        language=None,
     )
 
   with col_t22_2:
     label_5_22 = (
         f"*Zakład na 5 liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/5):*"
-        if show_ticks_22
-        else "*Zakład na 5 liczb (Mieszane + Zimne) (Oczekuje na losowanie):*"
+        if show_ticks_coupon_22
+        else (
+            "*Zakład na 5 liczb (Mieszane + Zimne) (Oczekuje na dzisiejsze"
+            " losowanie):*"
+        )
     )
     st.markdown(label_5_22)
     st.code(
-        format_coupon_list(c_5_22, latest_nums_22, show_ticks_22), language=None
+        format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
+        language=None,
     )
 
   st.divider()

@@ -347,13 +347,28 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- FUNKCJA GENERUJĄCA LICZBY PO PRZESKOKACH (Z REGUŁĄ PARZYSTOŚCI DLA 22:00) ---
-  def get_followers_after_jumps(session_time, limit, seed):
-    df_session = df[df["Godzina"] == session_time].tail(int(zakres) + 2)
-    if len(df_session) < 3:
-      return []
+  # --- ROZBUDOWANY GENERATOR: PRZESKOKI + ZIMNE LICZBY (3-4 LOSOWANIA) + ROZPIĘTOŚĆ DEKAD ---
+  def get_followers_with_filters(session_time, limit, seed):
+    df_session = df[df["Godzina"] == session_time]
+    if len(df_session) < 5:
+      return [f"{i:02d}" for i in range(1, limit + 1)]
 
-    rows = df_session.iloc[:, 3:].values
+    # 1. Wykrywanie liczb ZIMNYCH (nieobecnych w ostatnich 4 losowaniach danej sesji)
+    recent_session_rows = df_session.tail(4)
+    recent_session_nums = set()
+    for row_vals in recent_session_rows.iloc[:, 3:].values:
+      for v in row_vals:
+        if pd.notna(v) and str(v).replace(".0", "").strip().isdigit():
+          recent_session_nums.add(
+              f"{int(str(v).replace('.0', '').strip()):02d}"
+          )
+
+    all_80 = [f"{n:02d}" for n in range(1, 81)]
+    cold_pool = {n for n in all_80 if n not in recent_session_nums}
+
+    # 2. Analiza następstw po przeskokach w wybranym zakresie
+    df_analyzed_session = df_session.tail(int(zakres) + 2)
+    rows = df_analyzed_session.iloc[:, 3:].values
     followers_score = Counter()
 
     for i in range(1, len(rows) - 1):
@@ -378,70 +393,61 @@ if df is not None and not df.empty:
         for num in d_next:
           followers_score[num] += len(jumped)
 
-    sorted_candidates = [
-        num for num, score in followers_score.most_common()
-    ]
-    all_80 = [f"{n:02d}" for n in range(1, 81)]
+    # 3. Łączenie punktacji: premiujemy liczby zimne, które jednocześnie mają wysoki wynik po przeskokach
+    combined_scores = {}
     for n in all_80:
-      if n not in sorted_candidates:
-        sorted_candidates.append(n)
+      base_score = followers_score.get(n, 1)
+      # Premia dla zimnych liczb (np. mnożnik 1.5x jeśli nie było ich w ostatnich 4 losowaniach)
+      if n in cold_pool:
+        combined_scores[n] = base_score * 1.5
+      else:
+        combined_scores[n] = base_score
+
+    sorted_candidates = sorted(
+        all_80, key=lambda x: combined_scores[x], reverse=True
+    )
 
     rng = random.Random(seed)
     selected = []
 
-    # REGUŁA DLA 22:00:
-    # - Zakład na 10 liczb -> TYLKO PARZYSTE
-    # - Zakład na 5 liczb -> MIESZANE (np. 3 parzyste, 2 nieparzyste lub na odwrót)
+    # Pomocnicza funkcja do dekad (0 do 7, gdzie 0 to 1-10, 1 to 11-20 itd.)
+    def get_decade(num_str):
+      return (int(num_str) - 1) // 10
+
+    # REGUŁY SESJI 22:00 vs 14:00 z uwzględnieniem równomiernego rozproszenia dekad
     if session_time == "22:00":
       if limit == 10:
-        # Wymuś 10 parzystych
+        # Zakład na 10 liczb: TYLKO PARZYSTE + rozproszenie po dekadach
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
-        selected = even_pool[:10]
+        # Wybieraj tak, aby maksymalnie rozproszyć po dekadach (max 2 z jednej dekady na start)
+        decade_counts = {d: 0 for d in range(8)}
+        for c in even_pool:
+          dec = get_decade(c)
+          if decade_counts[dec] < 2 and len(selected) < 10:
+            selected.append(c)
+            decade_counts[dec] += 1
+        # Jeśli zabrakło do 10, dobierz z puli parzystych bez limitu dekad
+        for c in even_pool:
+          if len(selected) < 10 and c not in selected:
+            selected.append(c)
+
       elif limit == 5:
-        # Wymuś mieszane (np. 3 parzyste, 2 nieparzyste)
+        # Zakład na 5 liczb: MIESZANE (3 parzyste, 2 nieparzyste)
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
         odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
         selected = even_pool[:3] + odd_pool[:2]
     else:
-      # Standardowe 14:00 (50/50)
-      selected = [sorted_candidates[0]]
-
-    # Dopełnienie algorytmem standardowym jeśli potrzeba
-    while len(selected) < limit and len(selected) < len(sorted_candidates):
-      best_next = None
-      best_score = -1
-
-      current_even = sum(1 for x in selected if int(x) % 2 == 0)
-      target_even = (
-          math.ceil(limit * 0.52)
-          if session_time == "22:00"
-          else math.ceil(limit / 2.0)
-      )
-
-      for cand in sorted_candidates:
-        if cand in selected:
-          continue
-        if (
-            session_time != "22:00"
-            and int(cand) % 2 == 0
-            and current_even >= target_even
-            and (limit - len(selected)) <= (limit - target_even)
-        ):
-          continue
-
-        cand_score = followers_score.get(cand, 0)
-        if cand_score > best_score:
-          best_score = cand_score
-          best_next = cand
-
-      if best_next:
-        selected.append(best_next)
-      else:
-        remaining = [c for c in sorted_candidates if c not in selected]
-        if remaining:
-          selected.append(rng.choice(remaining))
-        else:
-          break
+      # Sesja 14:00: zbalansowany kupon z mocnym naciskiem na rozproszenie po dekadach
+      decade_counts = {d: 0 for d in range(8)}
+      for c in sorted_candidates:
+        dec = get_decade(c)
+        if decade_counts[dec] < (2 if limit == 10 else 1) and len(selected) < limit:
+          selected.append(c)
+          decade_counts[dec] += 1
+      # Dopełnienie w razie potrzeby
+      for c in sorted_candidates:
+        if len(selected) < limit and c not in selected:
+          selected.append(c)
 
     return sorted(selected, key=lambda x: int(x))[:limit]
 
@@ -478,12 +484,12 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 14:00 ➡️"
-      " 14:00):**"
+      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH + Filtry (Cykl 14:00"
+      " ➡️ 14:00):**"
   )
 
-  c_10_14 = get_followers_after_jumps("14:00", 10, 100)
-  c_5_14 = get_followers_after_jumps("14:00", 5, 200)
+  c_10_14 = get_followers_with_filters("14:00", 10, 100)
+  c_5_14 = get_followers_with_filters("14:00", 5, 200)
 
   hits_c10_14 = (
       sum(
@@ -571,12 +577,12 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH (Cykl 22:00 ➡️"
-      " 22:00):**"
+      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH + Filtry (Cykl 22:00"
+      " ➡️ 22:00):**"
   )
 
-  c_10_22 = get_followers_after_jumps("22:00", 10, 300)
-  c_5_22 = get_followers_after_jumps("22:00", 5, 400)
+  c_10_22 = get_followers_with_filters("22:00", 10, 300)
+  c_5_22 = get_followers_with_filters("22:00", 5, 400)
 
   hits_c10_22 = (
       sum(
@@ -610,9 +616,12 @@ if df is not None and not df.empty:
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
     label_10_22 = (
-        f"*Zakład na 10 liczb (Parzyste) (Trafienia: {hits_c10_22}/10):*"
+        f"*Zakład na 10 liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/10):*"
         if show_ticks_22
-        else "*Zakład na 10 liczb (Parzyste) (Oczekuje na losowanie):*"
+        else (
+            "*Zakład na 10 liczb (Parzyste + Dekady) (Oczekuje na"
+            " losowanie):*"
+        )
     )
     st.markdown(label_10_22)
     st.code(
@@ -621,9 +630,9 @@ if df is not None and not df.empty:
 
   with col_t22_2:
     label_5_22 = (
-        f"*Zakład na 5 liczb (Mieszane) (Trafienia: {hits_c5_22}/5):*"
+        f"*Zakład na 5 liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/5):*"
         if show_ticks_22
-        else "*Zakład na 5 liczb (Mieszane) (Oczekuje na losowanie):*"
+        else "*Zakład na 5 liczb (Mieszane + Zimne) (Oczekuje na losowanie):*"
     )
     st.markdown(label_5_22)
     st.code(
@@ -695,7 +704,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(val) and str(v).strip()
+        if pd.notna(v) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

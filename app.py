@@ -241,7 +241,7 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
-  # Pobierz numery z OSTATNIEGO dostępnego losowania 14:00 w bazie
+  # Ostatnie losowanie 14:00
   latest_nums_14 = set()
   last_date_14 = ""
   if not df_14_all.empty:
@@ -255,7 +255,7 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Pobierz numery z OSTATNIEGO dostępnego losowania 22:00 w bazie
+  # Ostatnie losowanie 22:00
   latest_nums_22 = set()
   last_date_22 = ""
   if not df_22_all.empty:
@@ -269,19 +269,11 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Logika włączania ptaszków:
-  # Ptaszki pokazujemy dla tej sesji, która jest aktualnie "najświeższa" w bazie (czyli np. wieczorna lub popołudniowa w zależności od tego, co dorzucono do pliku/API).
-  # Porównujemy daty ostatnich losowań 14:00 i 22:00:
-  # Jeśli data 22:00 jest nowsza lub równa 14:00, to wieczorne losowanie się odbyło i ma ptaszki.
-  # Gdy pojawią się wyniki 14:00 z nowszą datą, automatycznie wskoczą ptaszki na 14:00, a z 22:00 znikną czekając na wieczór.
-
   show_ticks_14 = False
   show_ticks_22 = False
 
   if last_date_14 and last_date_22:
     if last_date_14 == last_date_22:
-      # Tego samego dnia: jeśli ostatni wpis w bazie ogółem to 22:00, to 22:00 ma ptaszki, a 14:00 nie.
-      # Jeśli ostatni wpis ogółem to 14:00, to 14:00 ma ptaszki, a 22:00 nie.
       last_overall_hour = df.iloc[-1]["Godzina"]
       if last_overall_hour == "22:00":
         show_ticks_22 = True
@@ -355,7 +347,7 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- FUNKCJA GENERUJĄCA LICZBY PO PRZESKOKACH (CYKL 24H) ---
+  # --- FUNKCJA GENERUJĄCA LICZBY PO PRZESKOKACH (Z REGUŁĄ PARZYSTOŚCI DLA 22:00) ---
   def get_followers_after_jumps(session_time, limit, seed):
     df_session = df[df["Godzina"] == session_time].tail(int(zakres) + 2)
     if len(df_session) < 3:
@@ -395,8 +387,26 @@ if df is not None and not df.empty:
         sorted_candidates.append(n)
 
     rng = random.Random(seed)
-    selected = [sorted_candidates[0]]
+    selected = []
 
+    # REGUŁA DLA 22:00:
+    # - Zakład na 10 liczb -> TYLKO PARZYSTE
+    # - Zakład na 5 liczb -> MIESZANE (np. 3 parzyste, 2 nieparzyste lub na odwrót)
+    if session_time == "22:00":
+      if limit == 10:
+        # Wymuś 10 parzystych
+        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
+        selected = even_pool[:10]
+      elif limit == 5:
+        # Wymuś mieszane (np. 3 parzyste, 2 nieparzyste)
+        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
+        odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
+        selected = even_pool[:3] + odd_pool[:2]
+    else:
+      # Standardowe 14:00 (50/50)
+      selected = [sorted_candidates[0]]
+
+    # Dopełnienie algorytmem standardowym jeśli potrzeba
     while len(selected) < limit and len(selected) < len(sorted_candidates):
       best_next = None
       best_score = -1
@@ -412,7 +422,8 @@ if df is not None and not df.empty:
         if cand in selected:
           continue
         if (
-            int(cand) % 2 == 0
+            session_time != "22:00"
+            and int(cand) % 2 == 0
             and current_even >= target_even
             and (limit - len(selected)) <= (limit - target_even)
         ):
@@ -599,9 +610,9 @@ if df is not None and not df.empty:
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
     label_10_22 = (
-        f"*Zakład na 10 liczb (Trafienia: {hits_c10_22}/10):*"
+        f"*Zakład na 10 liczb (Parzyste) (Trafienia: {hits_c10_22}/10):*"
         if show_ticks_22
-        else "*Zakład na 10 liczb (Oczekuje na losowanie):*"
+        else "*Zakład na 10 liczb (Parzyste) (Oczekuje na losowanie):*"
     )
     st.markdown(label_10_22)
     st.code(
@@ -610,9 +621,9 @@ if df is not None and not df.empty:
 
   with col_t22_2:
     label_5_22 = (
-        f"*Zakład na 5 liczb (Trafienia: {hits_c5_22}/5):*"
+        f"*Zakład na 5 liczb (Mieszane) (Trafienia: {hits_c5_22}/5):*"
         if show_ticks_22
-        else "*Zakład na 5 liczb (Oczekuje na losowanie):*"
+        else "*Zakład na 5 liczb (Mieszane) (Oczekuje na losowanie):*"
     )
     st.markdown(label_5_22)
     st.code(
@@ -684,7 +695,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        if pd.notna(val) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

@@ -243,7 +243,7 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
-  # Sprawdzenie czy dzisiejsze losowanie 14:00 już się odbyło
+  # Sprawdzenie czy ostatnie losowanie 14:00 jest z dzisiaj
   latest_nums_14 = set()
   show_ticks_14 = False
   if not df_14_all.empty:
@@ -258,7 +258,7 @@ if df is not None and not df.empty:
           if pd.notna(v) and str(v).strip()
       }
 
-  # Sprawdzenie czy dzisiejsze losowanie 22:00 już się odbyło
+  # Sprawdzenie czy ostatnie losowanie 22:00 jest z dzisiaj (lub najświeższe wieczorne)
   latest_nums_22 = set()
   show_ticks_22 = False
   if not df_22_all.empty:

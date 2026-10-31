@@ -335,7 +335,7 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- ROZBUDOWANY GENERATOR: PRZESKOKI + ZIMNE LICZBY + ROZPIĘTOŚĆ DEKAD ---
+  # --- ROZBUDOWANY GENERATOR: NASTĘPCY PO PRZESKOKACH + FILTRY ---
   def get_followers_with_filters(session_time, limit, seed):
     df_session = df[df["Godzina"] == session_time]
     if len(df_session) < 5:
@@ -466,7 +466,6 @@ if df is not None and not df.empty:
       " ➡️ 14:00):**"
   )
 
-  # SUWAKI DLA 14:00
   col_s14_1, col_s14_2, col_s14_3 = st.columns(3)
   with col_s14_1:
     sz_10_14 = st.slider(
@@ -600,7 +599,6 @@ if df is not None and not df.empty:
       " ➡️ 22:00):**"
   )
 
-  # SUWAKI DLA 22:00
   col_s22_1, col_s22_2, col_s22_3 = st.columns(3)
   with col_s22_1:
     sz_10_22 = st.slider(

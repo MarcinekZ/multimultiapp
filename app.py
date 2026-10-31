@@ -274,11 +274,7 @@ if df is not None and not df.empty:
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # Dla 14:00 kupony mają ptaszki tylko jeśli dzisiejsze losowanie 14:00 się odbyło
   show_ticks_coupon_14 = True if (last_date_14 == today_str) else False
-
-  # Dla 22:00 kupony pokazują ptaszki dla ostatniego ukończonego wieczornego losowania w bazie (np. z wczoraj)
-  # Dopóki dzisiejsze 22:00 nie zostanie pobrane/zaktualizowane, pokazuje wczorajsze trafienia, a po dzisiejszym losowaniu i aktualizacji – czekają na nowe.
   show_ticks_coupon_22 = True if latest_nums_22 else False
 
 
@@ -402,26 +398,31 @@ if df is not None and not df.empty:
       return (int(num_str) - 1) // 10
 
     if session_time == "22:00":
-      if limit == 10:
+      if limit > 5:
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
         decade_counts = {d: 0 for d in range(8)}
         for c in even_pool:
           dec = get_decade(c)
-          if decade_counts[dec] < 2 and len(selected) < 10:
+          if decade_counts[dec] < 2 and len(selected) < limit:
             selected.append(c)
             decade_counts[dec] += 1
         for c in even_pool:
-          if len(selected) < 10 and c not in selected:
+          if len(selected) < limit and c not in selected:
             selected.append(c)
-      elif limit == 5:
+      elif limit > 3:
         even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
         odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
-        selected = even_pool[:3] + odd_pool[:2]
+        selected = even_pool[:3] + odd_pool[: max(0, limit - 3)]
+      else:
+        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
+        odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
+        selected = even_pool[: min(limit, 2)] + odd_pool[: max(0, limit - 2)]
     else:
       decade_counts = {d: 0 for d in range(8)}
+      max_per_dec = 2 if limit > 5 else 1
       for c in sorted_candidates:
         dec = get_decade(c)
-        if decade_counts[dec] < (2 if limit == 10 else 1) and len(selected) < limit:
+        if decade_counts[dec] < max_per_dec and len(selected) < limit:
           selected.append(c)
           decade_counts[dec] += 1
       for c in sorted_candidates:
@@ -465,8 +466,22 @@ if df is not None and not df.empty:
       " ➡️ 14:00):**"
   )
 
-  c_10_14 = get_followers_with_filters("14:00", 10, 100)
-  c_5_14 = get_followers_with_filters("14:00", 5, 200)
+  # SUWAKI DLA 14:00
+  col_s14_1, col_s14_2, col_s14_3 = st.columns(3)
+  with col_s14_1:
+    sz_10_14 = st.slider(
+        "Suwak duży (14:00):", 1, 10, 10, key="slider_10_14"
+    )
+  with col_s14_2:
+    sz_5_14 = st.slider(
+        "Suwak średni (14:00):", 1, 5, 5, key="slider_5_14"
+    )
+  with col_s14_3:
+    sz_3_14 = st.slider("Suwak mały (14:00):", 1, 3, 3, key="slider_3_14")
+
+  c_10_14 = get_followers_with_filters("14:00", sz_10_14, 100)
+  c_5_14 = get_followers_with_filters("14:00", sz_5_14, 200)
+  c_3_14 = get_followers_with_filters("14:00", sz_3_14, 250)
 
   hits_c10_14 = (
       sum(
@@ -496,31 +511,53 @@ if df is not None and not df.empty:
       if show_ticks_coupon_14
       else 0
   )
+  hits_c3_14 = (
+      sum(
+          1
+          for n in c_3_14
+          if (
+              f"{int(n):02d}"
+              if str(n).replace(".0", "").isdigit()
+              else str(n)
+          )
+          in latest_nums_14
+      )
+      if show_ticks_coupon_14
+      else 0
+  )
 
-  col_t14_1, col_t14_2 = st.columns(2)
-  with col_t14_1:
-    label_10_14 = (
-        f"*Zakład na 10 liczb (Trafienia: {hits_c10_14}/10):*"
-        if show_ticks_coupon_14
-        else "*Zakład na 10 liczb (Oczekuje na dzisiejsze losowanie):*"
-    )
-    st.markdown(label_10_14)
-    st.code(
-        format_coupon_list(
-            c_10_14, latest_nums_14, show_ticks_coupon_14
-        ),
-        language=None,
-    )
+  label_10_14 = (
+      f"*Zakład na {sz_10_14} liczb (Trafienia: {hits_c10_14}/{sz_10_14}):*"
+      if show_ticks_coupon_14
+      else f"*Zakład na {sz_10_14} liczb (Oczekuje na dzisiejsze losowanie):*"
+  )
+  st.markdown(label_10_14)
+  st.code(
+      format_coupon_list(c_10_14, latest_nums_14, show_ticks_coupon_14),
+      language=None,
+  )
 
-  with col_t14_2:
+  col_14_a, col_14_b = st.columns(2)
+  with col_14_a:
     label_5_14 = (
-        f"*Zakład na 5 liczb (Trafienia: {hits_c5_14}/5):*"
+        f"*Zakład na {sz_5_14} liczb (Trafienia: {hits_c5_14}/{sz_5_14}):*"
         if show_ticks_coupon_14
-        else "*Zakład na 5 liczb (Oczekuje na dzisiejsze losowanie):*"
+        else f"*Zakład na {sz_5_14} liczb (Oczekuje na dzisiejsze losowanie):*"
     )
     st.markdown(label_5_14)
     st.code(
         format_coupon_list(c_5_14, latest_nums_14, show_ticks_coupon_14),
+        language=None,
+    )
+  with col_14_b:
+    label_3_14 = (
+        f"*Zakład na {sz_3_14} liczb (Trafienia: {hits_c3_14}/{sz_3_14}):*"
+        if show_ticks_coupon_14
+        else f"*Zakład na {sz_3_14} liczb (Oczekuje na dzisiejsze losowanie):*"
+    )
+    st.markdown(label_3_14)
+    st.code(
+        format_coupon_list(c_3_14, latest_nums_14, show_ticks_coupon_14),
         language=None,
     )
 
@@ -563,8 +600,22 @@ if df is not None and not df.empty:
       " ➡️ 22:00):**"
   )
 
-  c_10_22 = get_followers_with_filters("22:00", 10, 300)
-  c_5_22 = get_followers_with_filters("22:00", 5, 400)
+  # SUWAKI DLA 22:00
+  col_s22_1, col_s22_2, col_s22_3 = st.columns(3)
+  with col_s22_1:
+    sz_10_22 = st.slider(
+        "Suwak duży (22:00):", 1, 10, 10, key="slider_10_22"
+    )
+  with col_s22_2:
+    sz_5_22 = st.slider(
+        "Suwak średni (22:00):", 1, 5, 5, key="slider_5_22"
+    )
+  with col_s22_3:
+    sz_3_22 = st.slider("Suwak mały (22:00):", 1, 3, 3, key="slider_3_22")
+
+  c_10_22 = get_followers_with_filters("22:00", sz_10_22, 300)
+  c_5_22 = get_followers_with_filters("22:00", sz_5_22, 400)
+  c_3_22 = get_followers_with_filters("22:00", sz_3_22, 450)
 
   hits_c10_22 = (
       sum(
@@ -594,23 +645,41 @@ if df is not None and not df.empty:
       if show_ticks_coupon_22
       else 0
   )
+  hits_c3_22 = (
+      sum(
+          1
+          for n in c_3_22
+          if (
+              f"{int(n):02d}"
+              if str(n).replace(".0", "").isdigit()
+              else str(n)
+          )
+          in latest_nums_22
+      )
+      if show_ticks_coupon_22
+      else 0
+  )
 
-  col_t22_1, col_t22_2 = st.columns(2)
-  with col_t22_1:
-    label_10_22 = f"*Zakład na 10 liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/10):*"
-    st.markdown(label_10_22)
-    st.code(
-        format_coupon_list(
-            c_10_22, latest_nums_22, show_ticks_coupon_22
-        ),
-        language=None,
-    )
+  label_10_22 = f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/{sz_10_22}):*"
+  st.markdown(label_10_22)
+  st.code(
+      format_coupon_list(c_10_22, latest_nums_22, show_ticks_coupon_22),
+      language=None,
+  )
 
-  with col_t22_2:
-    label_5_22 = f"*Zakład na 5 liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/5):*"
+  col_22_a, col_22_b = st.columns(2)
+  with col_22_a:
+    label_5_22 = f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/{sz_5_22}):*"
     st.markdown(label_5_22)
     st.code(
         format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
+        language=None,
+    )
+  with col_22_b:
+    label_3_22 = f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia: {hits_c3_22}/{sz_3_22}):*"
+    st.markdown(label_3_22)
+    st.code(
+        format_coupon_list(c_3_22, latest_nums_22, show_ticks_coupon_22),
         language=None,
     )
 

@@ -274,8 +274,12 @@ if df is not None and not df.empty:
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
+  # Dla 14:00 kupony mają ptaszki tylko jeśli dzisiejsze losowanie 14:00 się odbyło
   show_ticks_coupon_14 = True if (last_date_14 == today_str) else False
-  show_ticks_coupon_22 = True if (last_date_22 == today_str) else False
+
+  # Dla 22:00 kupony pokazują ptaszki dla ostatniego ukończonego wieczornego losowania w bazie (np. z wczoraj)
+  # Dopóki dzisiejsze 22:00 nie zostanie pobrane/zaktualizowane, pokazuje wczorajsze trafienia, a po dzisiejszym losowaniu i aktualizacji – czekają na nowe.
+  show_ticks_coupon_22 = True if latest_nums_22 else False
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -325,7 +329,6 @@ if df is not None and not df.empty:
         counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
     ]
 
-    # SORTOWANIE ROSNĄCO (od najniższej do najwyższej liczby)
     even_sorted = sorted(even_counts.head(15).index.tolist(), key=lambda x: int(x))
     odd_sorted = sorted(odd_counts.head(15).index.tolist(), key=lambda x: int(x))
 
@@ -594,14 +597,7 @@ if df is not None and not df.empty:
 
   col_t22_1, col_t22_2 = st.columns(2)
   with col_t22_1:
-    label_10_22 = (
-        f"*Zakład na 10 liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/10):*"
-        if show_ticks_coupon_22
-        else (
-            "*Zakład na 10 liczb (Parzyste + Dekady) (Oczekuje na"
-            " dzisiejsze losowanie):*"
-        )
-    )
+    label_10_22 = f"*Zakład na 10 liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/10):*"
     st.markdown(label_10_22)
     st.code(
         format_coupon_list(
@@ -611,14 +607,7 @@ if df is not None and not df.empty:
     )
 
   with col_t22_2:
-    label_5_22 = (
-        f"*Zakład na 5 liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/5):*"
-        if show_ticks_coupon_22
-        else (
-            "*Zakład na 5 liczb (Mieszane + Zimne) (Oczekuje na dzisiejsze"
-            " losowanie):*"
-        )
-    )
+    label_5_22 = f"*Zakład na 5 liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/5):*"
     st.markdown(label_5_22)
     st.code(
         format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),

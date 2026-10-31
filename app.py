@@ -271,11 +271,9 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Top 15 zawsze pokazuje weryfikację z ostatniego zakończonego losowania w bazie
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # Kupony sprawdzają, czy dzisiejsze losowanie jest już zaktualizowane w bazie
   show_ticks_coupon_14 = True if (last_date_14 == today_str) else False
   show_ticks_coupon_22 = True if (last_date_22 == today_str) else False
 
@@ -326,10 +324,12 @@ if df is not None and not df.empty:
     odd_counts = counts[
         counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
     ]
-    return (
-        even_counts.head(15).index.tolist(),
-        odd_counts.head(15).index.tolist(),
-    )
+
+    # SORTOWANIE ROSNĄCO (od najniższej do najwyższej liczby)
+    even_sorted = sorted(even_counts.head(15).index.tolist(), key=lambda x: int(x))
+    odd_sorted = sorted(odd_counts.head(15).index.tolist(), key=lambda x: int(x))
+
+    return even_sorted, odd_sorted
 
 
   even_14, odd_14 = get_session_top15("14:00")

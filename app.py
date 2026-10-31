@@ -1,5 +1,4 @@
 from collections import Counter
-import datetime
 import glob
 from itertools import combinations
 import math
@@ -139,7 +138,6 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 
 if df is not None and not df.empty:
   total_draws = len(df)
-  today_str = datetime.date.today().strftime("%d.%m.%Y")
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -243,35 +241,62 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
-  # Sprawdzenie czy ostatnie losowanie 14:00 jest z dzisiaj
+  # Pobierz numery z OSTATNIEGO dostępnego losowania 14:00 w bazie
   latest_nums_14 = set()
-  show_ticks_14 = False
+  last_date_14 = ""
   if not df_14_all.empty:
     latest_draw_14 = df_14_all.iloc[-1]
-    if str(latest_draw_14["Data"]).strip() == today_str:
-      show_ticks_14 = True
-      latest_nums_14 = {
-          f"{int(str(v).replace('.0', '').strip()):02d}"
-          if str(v).replace(".0", "").strip().isdigit()
-          else str(v).replace(".0", "").strip()
-          for v in latest_draw_14.iloc[3:].values
-          if pd.notna(v) and str(v).strip()
-      }
+    last_date_14 = str(latest_draw_14["Data"]).strip()
+    latest_nums_14 = {
+        f"{int(str(v).replace('.0', '').strip()):02d}"
+        if str(v).replace(".0", "").strip().isdigit()
+        else str(v).replace(".0", "").strip()
+        for v in latest_draw_14.iloc[3:].values
+        if pd.notna(v) and str(v).strip()
+    }
 
-  # Sprawdzenie czy ostatnie losowanie 22:00 jest z dzisiaj (lub najświeższe wieczorne)
+  # Pobierz numery z OSTATNIEGO dostępnego losowania 22:00 w bazie
   latest_nums_22 = set()
-  show_ticks_22 = False
+  last_date_22 = ""
   if not df_22_all.empty:
     latest_draw_22 = df_22_all.iloc[-1]
-    if str(latest_draw_22["Data"]).strip() == today_str:
+    last_date_22 = str(latest_draw_22["Data"]).strip()
+    latest_nums_22 = {
+        f"{int(str(v).replace('.0', '').strip()):02d}"
+        if str(v).replace(".0", "").strip().isdigit()
+        else str(v).strip()
+        for v in latest_draw_22.iloc[3:].values
+        if pd.notna(v) and str(v).strip()
+    }
+
+  # Logika włączania ptaszków:
+  # Ptaszki pokazujemy dla tej sesji, która jest aktualnie "najświeższa" w bazie (czyli np. wieczorna lub popołudniowa w zależności od tego, co dorzucono do pliku/API).
+  # Porównujemy daty ostatnich losowań 14:00 i 22:00:
+  # Jeśli data 22:00 jest nowsza lub równa 14:00, to wieczorne losowanie się odbyło i ma ptaszki.
+  # Gdy pojawią się wyniki 14:00 z nowszą datą, automatycznie wskoczą ptaszki na 14:00, a z 22:00 znikną czekając na wieczór.
+
+  show_ticks_14 = False
+  show_ticks_22 = False
+
+  if last_date_14 and last_date_22:
+    if last_date_14 == last_date_22:
+      # Tego samego dnia: jeśli ostatni wpis w bazie ogółem to 22:00, to 22:00 ma ptaszki, a 14:00 nie.
+      # Jeśli ostatni wpis ogółem to 14:00, to 14:00 ma ptaszki, a 22:00 nie.
+      last_overall_hour = df.iloc[-1]["Godzina"]
+      if last_overall_hour == "22:00":
+        show_ticks_22 = True
+        show_ticks_14 = False
+      else:
+        show_ticks_14 = True
+        show_ticks_22 = False
+    elif last_date_14 > last_date_22:
+      show_ticks_14 = True
+      show_ticks_22 = False
+    else:
       show_ticks_22 = True
-      latest_nums_22 = {
-          f"{int(str(v).replace('.0', '').strip()):02d}"
-          if str(v).replace(".0", "").strip().isdigit()
-          else str(v).replace(".0", "").strip()
-          for v in latest_draw_22.iloc[3:].values
-          if pd.notna(v) and str(v).strip()
-      }
+      show_ticks_14 = False
+  elif last_date_22:
+    show_ticks_22 = True
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):

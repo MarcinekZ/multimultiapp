@@ -14,6 +14,19 @@ st.set_page_config(
 
 
 def load_data():
+  # 1. Ładujemy lokalny plik CSV (niezawodny backup z GitHub Actions)
+  df_csv = None
+  csv_files = glob.glob("*.csv")
+  for fname in csv_files:
+    try:
+      temp_df = pd.read_csv(fname, header=None)
+      if not temp_df.empty:
+        df_csv = temp_df
+        break
+    except Exception:
+      continue
+
+  # 2. Pobieramy najświeższe dane z Live API
   df_live = None
   try:
     session = requests.Session()
@@ -28,7 +41,7 @@ def load_data():
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.lotto.pl/multi-multi/wyniki",
     }
-    res = session.get(api_url, headers=headers, timeout=5)
+    res = session.get(api_url, headers=headers, timeout=10)
 
     if res.status_code == 200:
       data = res.json()
@@ -59,7 +72,6 @@ def load_data():
           nums = item.get("drawResults", [])
 
         if nums:
-          # Ustalamy stałą, bezpieczną strukturę 20 wylosowanych liczb
           row = [draw_id, formatted_date, time_str] + list(nums)[:20]
           rows.append(row)
 
@@ -68,31 +80,28 @@ def load_data():
   except Exception:
     pass
 
-  df_csv = None
-  csv_files = glob.glob("*.csv")
-  for fname in csv_files:
-    try:
-      df_csv = pd.read_csv(fname, header=None)
-      if not df_csv.empty:
-        break
-    except Exception:
-      continue
-
-  # Używamy Live API jako głównego i najświeższego źródła, a CSV jako backupu
+  # 3. Łączymy oba źródła w jedną spójną bazę
+  dfs = []
+  if df_csv is not None and not df_csv.empty:
+    dfs.append(df_csv)
   if df_live is not None and not df_live.empty:
-    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
-    df = df_live
-  elif df_csv is not None and not df_csv.empty:
-    st.sidebar.error(
-        "🔴 Status: Plik lokalny CSV (Tryb awaryjny - stabilny)"
-    )
-    df = df_csv
-  else:
+    dfs.append(df_live)
+
+  if not dfs:
     return None
 
-  num_cols = df.shape[1]
-  cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
-  df.columns = cols[: len(df.columns)]
+  df = pd.concat(dfs, ignore_index=True)
+
+  # Standardyzacja kolumn: ID, Data, Godzina oraz dokładnie 20 liczb
+  if df.shape[1] >= 23:
+    df = df.iloc[:, :23]
+    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
+    df.columns = cols
+  else:
+    current_cols = ["ID", "Data", "Godzina"] + [
+        f"L{i}" for i in range(1, df.shape[1] - 2)
+    ]
+    df.columns = current_cols[: df.shape[1]]
 
   if "ID" in df.columns:
     df["ID"] = (
@@ -113,14 +122,15 @@ def load_data():
     return "14:00"
 
 
-  df["Godzina"] = df["Godzina"].apply(clean_hour)
+  if "Godzina" in df.columns:
+    df["Godzina"] = df["Godzina"].apply(clean_hour)
 
   try:
     df["ID_int"] = pd.to_numeric(df["ID"], errors="coerce")
     df = (
         df.dropna(subset=["ID_int"])
         .sort_values("ID_int")
-        .drop_duplicates(subset=["ID"])
+        .drop_duplicates(subset=["ID"], keep="last")
         .drop(columns=["ID_int"])
         .reset_index(drop=True)
     )
@@ -139,7 +149,7 @@ if st.sidebar.button("🔄 Odśwież i zsynchronizuj", use_container_width=True)
 
 if df is not None and not df.empty:
   st.sidebar.success(
-      f"🟢 Baza aktywna (Łącznie losowań: {len(df)})"
+      f"🟢 Baza hybrydowa aktywna (Łącznie losowań: {len(df)})"
   )
   total_draws = len(df)
 

@@ -336,7 +336,7 @@ if df is not None and not df.empty:
 
 
   @st.cache_data
-  def get_session_top_jumpers(current_zakres, session_time, top_n=8):
+  def get_session_top_jumpers(current_zakres, session_time, top_n=5):
     sub = df.tail(int(current_zakres))
     sub = sub[sub["Godzina"] == session_time].reset_index(drop=True)
     if len(sub) < 2:
@@ -354,11 +354,11 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top15(zakres, "14:00")
   even_22, odd_22 = get_session_top15(zakres, "22:00")
 
-  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 8)
-  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 8)
+  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
+  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
 
-  def get_smart_coupon(session_time, limit, current_zakres):
+  def get_smart_coupon(session_time, limit, current_zakres, seed_offset=0):
     df_session = df.tail(int(current_zakres))
     df_session = df_session[df_session["Godzina"] == session_time]
     if df_session.empty:
@@ -372,22 +372,33 @@ if df is not None and not df.empty:
           if cleaned_v.isdigit():
             all_session_nums.append(f"{int(cleaned_v):02d}")
 
-    # Główna frekwencja (Top z zakresu)
     counts = pd.Series(all_session_nums).value_counts()
+    top_freq_sorted = sorted(counts.index.tolist(), key=lambda x: counts[x], reverse=True)
+    session_jumpers = get_session_top_jumpers(current_zakres, session_time, 5)
+
+    coupon = []
+    # Bierzemy proporcjonalnie skoczków (np. 1 lub 2 w zależności od limitu)
+    num_jumpers = min(len(session_jumpers), max(1, limit // 3))
     
-    # Skoczki jako delikatne wsparcie (łagodny bonus, żeby nie zdominowały kuponu)
-    session_jumpers = set(get_session_top_jumpers(current_zakres, session_time, 8))
+    # Rotujemy nieco skoczków dla każdego z 3 zestawów za pomocą seed_offset, żeby zestawy się różniły
+    shifted_jumpers = session_jumpers[seed_offset:] + session_jumpers[:seed_offset]
+    selected_jumpers = shifted_jumpers[:num_jumpers]
+    coupon.extend(selected_jumpers)
 
-    combined = {}
-    for num in [f"{n:02d}" for n in range(1, 81)]:
-      freq = counts.get(num, 1)
-      bonus = (counts.mean() * 0.3) if num in session_jumpers else 0
-      combined[num] = freq + bonus
+    for num in top_freq_sorted:
+      if len(coupon) >= limit:
+        break
+      if num not in coupon:
+        coupon.append(num)
 
-    sorted_best = sorted(
-        combined.keys(), key=lambda x: combined[x], reverse=True
-    )
-    return sorted(sorted_best[:limit], key=lambda x: int(x))
+    for i in range(1, 81):
+      if len(coupon) >= limit:
+        break
+      s_num = f"{i:02d}"
+      if s_num not in coupon:
+        coupon.append(s_num)
+
+    return sorted(coupon, key=lambda x: int(x))
 
 
   # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
@@ -436,10 +447,10 @@ if df is not None and not df.empty:
       else 0
   )
   st.markdown(
-      f"**🔥 Top 8 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia:"
-      f" {hits_j14}/8)*:"
+      f"**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia:"
+      f" {hits_j14}/5)*:"
       if show_ticks_top15_14
-      else "**🔥 Top 8 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
+      else "**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
   )
   st.code(
       format_top15_list(jumpers_14, latest_nums_14, show_ticks_top15_14)
@@ -448,77 +459,38 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown("🎯 **Zakłady Wygenerowane (Sesja 14:00):**")
+  st.markdown("🎯 **3 Niezależne Zestawy (Sesja 14:00):**")
 
-  col_s14_1, col_s14_2, col_s14_3 = st.columns(3)
-  with col_s14_1:
-    sz_10_14 = st.slider(
-        "Suwak duży (14:00):", 1, 10, 10, key="slider_10_14"
-    )
-  with col_s14_2:
-    sz_5_14 = st.slider(
-        "Suwak średni (14:00):", 1, 5, 5, key="slider_5_14"
-    )
-  with col_s14_3:
-    sz_3_14 = st.slider("Suwak mały (14:00):", 1, 3, 3, key="slider_3_14")
+  # 3 zestawy z osobnymi suwakami
+  col_14_s1, col_14_c1 = st.columns([1, 3])
+  with col_14_s1:
+    sz_14_1 = st.slider("Liczb w Zestawie 1:", 1, 20, 10, key="sz_14_1")
+  c_14_1 = get_smart_coupon("14:00", sz_14_1, zakres, seed_offset=0)
+  hits_c14_1 = sum(1 for n in c_14_1 if n in latest_nums_14) if show_ticks_coupon_14 else 0
+  lbl_14_1 = f"**Zestaw 1** ({sz_14_1} liczb) {f'*(Trafienia: {hits_c14_1}/{sz_14_1})*' if show_ticks_coupon_14 else ''}"
+  with col_14_c1:
+    st.markdown(lbl_14_1)
+    st.code(format_coupon_list(c_14_1, latest_nums_14, show_ticks_coupon_14), language=None)
 
-  c_10_14 = get_smart_coupon("14:00", sz_10_14, zakres)
-  c_5_14 = get_smart_coupon("14:00", sz_5_14, zakres)
-  c_3_14 = get_smart_coupon("14:00", sz_3_14, zakres)
+  col_14_s2, col_14_c2 = st.columns([1, 3])
+  with col_14_s2:
+    sz_14_2 = st.slider("Liczb w Zestawie 2:", 1, 20, 10, key="sz_14_2")
+  c_14_2 = get_smart_coupon("14:00", sz_14_2, zakres, seed_offset=1)
+  hits_c14_2 = sum(1 for n in c_14_2 if n in latest_nums_14) if show_ticks_coupon_14 else 0
+  lbl_14_2 = f"**Zestaw 2** ({sz_14_2} liczb) {f'*(Trafienia: {hits_c14_2}/{sz_14_2})*' if show_ticks_coupon_14 else ''}"
+  with col_14_c2:
+    st.markdown(lbl_14_2)
+    st.code(format_coupon_list(c_14_2, latest_nums_14, show_ticks_coupon_14), language=None)
 
-  hits_c10_14 = (
-      sum(1 for n in c_10_14 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c5_14 = (
-      sum(1 for n in c_5_14 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c3_14 = (
-      sum(1 for n in c_3_14 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
-
-  label_10_14 = (
-      f"*Zakład na {sz_10_14} liczb (Trafienia:"
-      f" {hits_c10_14}/{sz_10_14}):*"
-      if show_ticks_coupon_14
-      else f"*Zakład na {sz_10_14} liczb:*"
-  )
-  st.markdown(label_10_14)
-  st.code(
-      format_coupon_list(c_10_14, latest_nums_14, show_ticks_coupon_14),
-      language=None,
-  )
-
-  col_14_a, col_14_b = st.columns(2)
-  with col_14_a:
-    label_5_14 = (
-        f"*Zakład na {sz_5_14} liczb (Trafienia:"
-        f" {hits_c5_14}/{sz_5_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_5_14} liczb:*"
-    )
-    st.markdown(label_5_14)
-    st.code(
-        format_coupon_list(c_5_14, latest_nums_14, show_ticks_coupon_14),
-        language=None,
-    )
-  with col_14_b:
-    label_3_14 = (
-        f"*Zakład na {sz_3_14} liczb (Trafienia:"
-        f" {hits_c3_14}/{sz_3_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_3_14} liczb:*"
-    )
-    st.markdown(label_3_14)
-    st.code(
-        format_coupon_list(c_3_14, latest_nums_14, show_ticks_coupon_14),
-        language=None,
-    )
+  col_14_s3, col_14_c3 = st.columns([1, 3])
+  with col_14_s3:
+    sz_14_3 = st.slider("Liczb w Zestawie 3:", 1, 20, 10, key="sz_14_3")
+  c_14_3 = get_smart_coupon("14:00", sz_14_3, zakres, seed_offset=2)
+  hits_c14_3 = sum(1 for n in c_14_3 if n in latest_nums_14) if show_ticks_coupon_14 else 0
+  lbl_14_3 = f"**Zestaw 3** ({sz_14_3} liczb) {f'*(Trafienia: {hits_c14_3}/{sz_14_3})*' if show_ticks_coupon_14 else ''}"
+  with col_14_c3:
+    st.markdown(lbl_14_3)
+    st.code(format_coupon_list(c_14_3, latest_nums_14, show_ticks_coupon_14), language=None)
 
   st.divider()
 
@@ -569,10 +541,10 @@ if df is not None and not df.empty:
       else 0
   )
   st.markdown(
-      f"**🔥 Top 8 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia:"
-      f" {hits_j22}/8)*:"
+      f"**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia:"
+      f" {hits_j22}/5)*:"
       if show_ticks_top15_22
-      else "**🔥 Top 8 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
+      else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
   )
   st.code(
       format_top15_list(jumpers_22, latest_nums_22, show_ticks_top15_22)
@@ -581,77 +553,37 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown("🎯 **Zakłady Wygenerowane (Sesja 22:00):**")
+  st.markdown("🎯 **3 Niezależne Zestawy (Sesja 22:00):**")
 
-  col_s22_1, col_s22_2, col_s22_3 = st.columns(3)
-  with col_s22_1:
-    sz_10_22 = st.slider(
-        "Suwak duży (22:00):", 1, 10, 10, key="slider_10_22"
-    )
-  with col_s22_2:
-    sz_5_22 = st.slider(
-        "Suwak średni (22:00):", 1, 5, 5, key="slider_5_22"
-    )
-  with col_s22_3:
-    sz_3_22 = st.slider("Suwak mały (22:00):", 1, 3, 3, key="slider_3_22")
+  col_22_s1, col_22_c1 = st.columns([1, 3])
+  with col_22_s1:
+    sz_22_1 = st.slider("Liczb w Zestawie 1:", 1, 20, 10, key="sz_22_1")
+  c_22_1 = get_smart_coupon("22:00", sz_22_1, zakres, seed_offset=0)
+  hits_c22_1 = sum(1 for n in c_22_1 if n in latest_nums_22) if show_ticks_coupon_22 else 0
+  lbl_22_1 = f"**Zestaw 1** ({sz_22_1} liczb) {f'*(Trafienia: {hits_c22_1}/{sz_22_1})*' if show_ticks_coupon_22 else ''}"
+  with col_22_c1:
+    st.markdown(lbl_22_1)
+    st.code(format_coupon_list(c_22_1, latest_nums_22, show_ticks_coupon_22), language=None)
 
-  c_10_22 = get_smart_coupon("22:00", sz_10_22, zakres)
-  c_5_22 = get_smart_coupon("22:00", sz_5_22, zakres)
-  c_3_22 = get_smart_coupon("22:00", sz_3_22, zakres)
+  col_22_s2, col_22_c2 = st.columns([1, 3])
+  with col_22_s2:
+    sz_22_2 = st.slider("Liczb w Zestawie 2:", 1, 20, 10, key="sz_22_2")
+  c_22_2 = get_smart_coupon("22:00", sz_22_2, zakres, seed_offset=1)
+  hits_c22_2 = sum(1 for n in c_22_2 if n in latest_nums_22) if show_ticks_coupon_22 else 0
+  lbl_22_2 = f"**Zestaw 2** ({sz_22_2} liczb) {f'*(Trafienia: {hits_c22_2}/{sz_22_2})*' if show_ticks_coupon_22 else ''}"
+  with col_22_c2:
+    st.markdown(lbl_22_2)
+    st.code(format_coupon_list(c_22_2, latest_nums_22, show_ticks_coupon_22), language=None)
 
-  hits_c10_22 = (
-      sum(1 for n in c_10_22 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c5_22 = (
-      sum(1 for n in c_5_22 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c3_22 = (
-      sum(1 for n in c_3_22 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
-
-  label_10_22 = (
-      f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia:"
-      f" {hits_c10_22}/{sz_10_22}):*"
-      if show_ticks_coupon_22
-      else f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady):*"
-  )
-  st.markdown(label_10_22)
-  st.code(
-      format_coupon_list(c_10_22, latest_nums_22, show_ticks_coupon_22),
-      language=None,
-  )
-
-  col_22_a, col_22_b = st.columns(2)
-  with col_22_a:
-    label_5_22 = (
-        f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia:"
-        f" {hits_c5_22}/{sz_5_22}):*"
-        if show_ticks_coupon_22
-        else f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne):*"
-    )
-    st.markdown(label_5_22)
-    st.code(
-        format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
-        language=None,
-    )
-  with col_22_b:
-    label_3_22 = (
-        f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia:"
-        f" {hits_c3_22}/{sz_3_22}):*"
-        if show_ticks_coupon_22
-        else f"*Zakład na {sz_3_22} liczb (Mieszane):*"
-    )
-    st.markdown(label_3_22)
-    st.code(
-        format_coupon_list(c_3_22, latest_nums_22, show_ticks_coupon_22),
-        language=None,
-    )
+  col_22_s3, col_22_c3 = st.columns([1, 3])
+  with col_22_s3:
+    sz_22_3 = st.slider("Liczb w Zestawie 3:", 1, 20, 10, key="sz_22_3")
+  c_22_3 = get_smart_coupon("22:00", sz_22_3, zakres, seed_offset=2)
+  hits_c22_3 = sum(1 for n in c_22_3 if n in latest_nums_22) if show_ticks_coupon_22 else 0
+  lbl_22_3 = f"**Zestaw 3** ({sz_22_3} liczb) {f'*(Trafienia: {hits_c22_3}/{sz_22_3})*' if show_ticks_coupon_22 else ''}"
+  with col_22_c3:
+    st.markdown(lbl_22_3)
+    st.code(format_coupon_list(c_22_3, latest_nums_22, show_ticks_coupon_22), language=None)
 
   st.divider()
 
@@ -718,7 +650,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        if pd.notna(val) and str(val).strip()
     ]
     display_data.append({
         "ID": row["ID"],

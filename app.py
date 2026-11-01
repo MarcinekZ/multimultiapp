@@ -17,8 +17,9 @@ def load_data():
   df_live = None
   try:
     session = requests.Session()
+    # Zwiększamy pobieranie do 400 losowań, aby mieć pewność, że wczorajsze 22:00 na pewno wpadnie
     api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=300"
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=400"
     )
     headers = {
         "User-Agent": (
@@ -139,6 +140,7 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 
 if df is not None and not df.empty:
   total_draws = len(df)
+  today_str = datetime.date.today().strftime("%d.%m.%Y")
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -270,7 +272,8 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Weryfikacja dla Top 15 oraz Kuponów opiera się zawsze na ostatnim dostępnym w bazie losowaniu danej sesji
+  # Flagi weryfikacji dla Top 15 i Kuponów:
+  # Pokazują trafienia z ostatniego dostępnego w bazie losowania danej sesji
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
@@ -447,7 +450,7 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      f"**Top 15 Parzyste** *(Ostatnie losowanie - Trafienia:"
+      f"**Top 15 Parzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_14_e}/15)*:"
   )
   st.code(
@@ -457,7 +460,7 @@ if df is not None and not df.empty:
       language=None,
   )
   st.markdown(
-      f"**Top 15 Nieparzyste** *(Ostatnie losowanie - Trafienia:"
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_14_o}/15)*:"
   )
   st.code(
@@ -581,7 +584,8 @@ if df is not None and not df.empty:
 
   st.markdown(
       "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" *(Ostatnie losowanie - Trafienia: {hits_22_e}/15)*:"
+      f" *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
+      f" {hits_22_e}/15)*:"
   )
   st.code(
       format_top15_list(even_22, latest_nums_22, show_ticks_top15_22)
@@ -590,7 +594,7 @@ if df is not None and not df.empty:
       language=None,
   )
   st.markdown(
-      f"**Top 15 Nieparzyste** *(Ostatnie losowanie - Trafienia:"
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
       f" {hits_22_o}/15)*:"
   )
   st.code(
@@ -761,7 +765,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        if pd.notna(val) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

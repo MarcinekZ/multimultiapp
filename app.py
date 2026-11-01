@@ -304,22 +304,13 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # ZABEZPIECZENIE DATY: Każda sekcja sprawdza wyłącznie swoje własne losowanie z dzisiejszą datą
-  today_str = datetime.datetime.now().strftime("%d.%m.%Y")
+  # TOP 15 pokazuje trafienia z ostatniego zakończonego losowania danej sesji
+  show_ticks_top15_14 = True if latest_nums_14 else False
+  show_ticks_top15_22 = True if latest_nums_22 else False
 
-  show_ticks_top15_14 = (
-      True if last_date_14 == today_str and latest_nums_14 else False
-  )
-  show_ticks_top15_22 = (
-      True if last_date_22 == today_str and latest_nums_22 else False
-  )
-
-  show_ticks_coupon_14 = (
-      True if last_date_14 == today_str and latest_nums_14 else False
-  )
-  show_ticks_coupon_22 = (
-      True if last_date_22 == today_str and latest_nums_22 else False
-  )
+  # ZAKŁADY (suwaki) to przewidywania na przyszłe losowanie -> ptaszki zawsze wyłączone
+  show_ticks_coupon_14 = False
+  show_ticks_coupon_22 = False
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -536,56 +527,7 @@ if df is not None and not df.empty:
   c_5_14 = get_followers_with_filters("14:00", sz_5_14, 200)
   c_3_14 = get_followers_with_filters("14:00", sz_3_14, 250)
 
-  hits_c10_14 = (
-      sum(
-          1
-          for n in c_10_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c5_14 = (
-      sum(
-          1
-          for n in c_5_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c3_14 = (
-      sum(
-          1
-          for n in c_3_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
-      if show_ticks_coupon_14
-      else 0
-  )
-
-  label_10_14 = (
-      f"*Zakład na {sz_10_14} liczb (Trafienia:"
-      f" {hits_c10_14}/{sz_10_14}):*"
-      if show_ticks_coupon_14
-      else f"*Zakład na {sz_10_14} liczb:*"
-  )
-  st.markdown(label_10_14)
+  st.markdown(f"*Zakład na {sz_10_14} liczb:*")
   st.code(
       format_coupon_list(c_10_14, latest_nums_14, show_ticks_coupon_14),
       language=None,
@@ -593,25 +535,13 @@ if df is not None and not df.empty:
 
   col_14_a, col_14_b = st.columns(2)
   with col_14_a:
-    label_5_14 = (
-        f"*Zakład na {sz_5_14} liczb (Trafienia:"
-        f" {hits_c5_14}/{sz_5_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_5_14} liczb:*"
-    )
-    st.markdown(label_5_14)
+    st.markdown(f"*Zakład na {sz_5_14} liczb:*")
     st.code(
         format_coupon_list(c_5_14, latest_nums_14, show_ticks_coupon_14),
         language=None,
     )
   with col_14_b:
-    label_3_14 = (
-        f"*Zakład na {sz_3_14} liczb (Trafienia:"
-        f" {hits_c3_14}/{sz_3_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_3_14} liczb:*"
-    )
-    st.markdown(label_3_14)
+    st.markdown(f"*Zakład na {sz_3_14} liczb:*")
     st.code(
         format_coupon_list(c_3_14, latest_nums_14, show_ticks_coupon_14),
         language=None,
@@ -680,56 +610,7 @@ if df is not None and not df.empty:
   c_5_22 = get_followers_with_filters("22:00", sz_5_22, 400)
   c_3_22 = get_followers_with_filters("22:00", sz_3_22, 450)
 
-  hits_c10_22 = (
-      sum(
-          1
-          for n in c_10_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c5_22 = (
-      sum(
-          1
-          for n in c_5_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c3_22 = (
-      sum(
-          1
-          for n in c_3_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
-      if show_ticks_coupon_22
-      else 0
-  )
-
-  label_10_22 = (
-      f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia:"
-      f" {hits_c10_22}/{sz_10_22}):*"
-      if show_ticks_coupon_22
-      else f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady):*"
-  )
-  st.markdown(label_10_22)
+  st.markdown(f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady):*")
   st.code(
       format_coupon_list(c_10_22, latest_nums_22, show_ticks_coupon_22),
       language=None,
@@ -737,25 +618,13 @@ if df is not None and not df.empty:
 
   col_22_a, col_22_b = st.columns(2)
   with col_22_a:
-    label_5_22 = (
-        f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia:"
-        f" {hits_c5_22}/{sz_5_22}):*"
-        if show_ticks_coupon_22
-        else f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne):*"
-    )
-    st.markdown(label_5_22)
+    st.markdown(f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne):*")
     st.code(
         format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
         language=None,
     )
   with col_22_b:
-    label_3_22 = (
-        f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia:"
-        f" {hits_c3_22}/{sz_3_22}):*"
-        if show_ticks_coupon_22
-        else f"*Zakład na {sz_3_22} liczb (Mieszane):*"
-    )
-    st.markdown(label_3_22)
+    st.markdown(f"*Zakład na {sz_3_22} liczb (Mieszane):*")
     st.code(
         format_coupon_list(c_3_22, latest_nums_22, show_ticks_coupon_22),
         language=None,

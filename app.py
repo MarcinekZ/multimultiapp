@@ -14,18 +14,6 @@ st.set_page_config(
 
 
 def load_data():
-  # 1. Pobieramy dane z lokalnego pliku CSV (aktualizowanego przez GitHub Actions)
-  df_csv = None
-  csv_files = glob.glob("*.csv")
-  for fname in csv_files:
-    try:
-      df_csv = pd.read_csv(fname, header=None)
-      if not df_csv.empty:
-        break
-    except Exception:
-      continue
-
-  # 2. Pobieramy dane z Live API
   df_live = None
   try:
     session = requests.Session()
@@ -71,7 +59,8 @@ def load_data():
           nums = item.get("drawResults", [])
 
         if nums:
-          row = [draw_id, formatted_date, time_str] + list(nums)
+          # Ustalamy stałą, bezpieczną strukturę 20 wylosowanych liczb
+          row = [draw_id, formatted_date, time_str] + list(nums)[:20]
           rows.append(row)
 
       if rows:
@@ -79,17 +68,27 @@ def load_data():
   except Exception:
     pass
 
-  # 3. Łączymy oba źródła (CSV + Live API), aby nic nie zostało pominięte
-  dfs_to_concat = []
-  if df_csv is not None and not df_csv.empty:
-    dfs_to_concat.append(df_csv)
+  df_csv = None
+  csv_files = glob.glob("*.csv")
+  for fname in csv_files:
+    try:
+      df_csv = pd.read_csv(fname, header=None)
+      if not df_csv.empty:
+        break
+    except Exception:
+      continue
+
+  # Używamy Live API jako głównego i najświeższego źródła, a CSV jako backupu
   if df_live is not None and not df_live.empty:
-    dfs_to_concat.append(df_live)
-
-  if not dfs_to_concat:
+    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
+    df = df_live
+  elif df_csv is not None and not df_csv.empty:
+    st.sidebar.error(
+        "🔴 Status: Plik lokalny CSV (Tryb awaryjny - stabilny)"
+    )
+    df = df_csv
+  else:
     return None
-
-  df = pd.concat(dfs_to_concat, ignore_index=True)
 
   num_cols = df.shape[1]
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
@@ -119,7 +118,8 @@ def load_data():
   try:
     df["ID_int"] = pd.to_numeric(df["ID"], errors="coerce")
     df = (
-        df.sort_values("ID_int")
+        df.dropna(subset=["ID_int"])
+        .sort_values("ID_int")
         .drop_duplicates(subset=["ID"])
         .drop(columns=["ID_int"])
         .reset_index(drop=True)
@@ -762,7 +762,7 @@ if df is not None and not df.empty:
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
         if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace('.0', '').strip()
+        else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
         if pd.notna(v) and str(v).strip()
     ]

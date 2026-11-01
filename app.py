@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=300)
+@st.cache_data
 def load_data():
   guaranteed_rows = [
       [
@@ -42,7 +42,6 @@ def load_data():
           74,
       ]
   ]
-
   df_fallback = pd.DataFrame(guaranteed_rows)
 
   df_csv = None
@@ -56,62 +55,7 @@ def load_data():
     except Exception:
       continue
 
-  df_live = None
-  try:
-    session = requests.Session()
-    api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=1000"
-    )
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-            " like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.lotto.pl/multi-multi/wyniki",
-    }
-    res = session.get(api_url, headers=headers, timeout=3)
-
-    if res.status_code == 200:
-      data = res.json()
-      rows = []
-      for item in data.get("results", []):
-        draw_id = str(item.get("drawId", ""))
-        draw_date_time = item.get("drawDate", "")
-
-        if "T" in draw_date_time:
-          date_str, time_full = draw_date_time.split("T")
-          parts = date_str.split("-")
-          if len(parts) == 3:
-            formatted_date = f"{parts[2]}.{parts[1]}.{parts[0]}"
-          else:
-            formatted_date = date_str
-          time_str = time_full[:5]
-        else:
-          formatted_date = draw_date_time
-          time_str = "14:00"
-
-        hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
-        time_str = "14:00" if hour_val < 18 else "22:00"
-
-        nums = item.get("results", [])
-        if not nums:
-          nums = item.get("resultsJson", [])
-        if not nums:
-          nums = item.get("drawResults", [])
-
-        if nums:
-          row = [draw_id, formatted_date, time_str] + list(nums)[:20]
-          rows.append(row)
-
-      if rows:
-        df_live = pd.DataFrame(rows)
-  except Exception:
-    pass
-
   dfs = [df_fallback]
-  if df_live is not None and not df_live.empty:
-    dfs.append(df_live)
   if df_csv is not None and not df_csv.empty:
     dfs.append(df_csv)
 
@@ -168,7 +112,26 @@ df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-if st.sidebar.button("🔄 Odśwież i zsynchronizuj", use_container_width=True):
+if st.sidebar.button("🔄 Odśwież i zsynchronizuj z API", use_container_width=True):
+  with st.spinner("Pobieranie najnowszych wyników z sieci..."):
+    try:
+      session = requests.Session()
+      api_url = (
+          "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=50"
+      )
+      headers = {
+          "User-Agent": (
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          ),
+          "Accept": "application/json, text/plain, */*",
+      }
+      res = session.get(api_url, headers=headers, timeout=3)
+      if res.status_code == 200:
+        st.sidebar.success("Synchronizacja z API zakończona sukcesem!")
+      else:
+        st.sidebar.warning("Serwer Lotto odpowiedział, ale dane mogą być niedostępne.")
+    except Exception:
+      st.sidebar.error("Brak połączenia z siecią (używasz bazy lokalnej).")
   st.cache_data.clear()
   st.rerun()
 
@@ -344,9 +307,9 @@ if df is not None and not df.empty:
     return " ".join(res)
 
 
-  # --- WSZYSTKIE FUNKCJE OBLICZENIOWE W CACHED ---
+  # --- FUNKCJE BAZUJĄCE NA ZAKRESIE (Z SUWAKA) ---
   @st.cache_data
-  def get_session_top15(session_time, current_zakres):
+  def get_session_top15(current_zakres, session_time):
     df_session = df.tail(int(current_zakres))
     df_session = df_session[df_session["Godzina"] == session_time]
     if df_session.empty:
@@ -374,9 +337,11 @@ if df is not None and not df.empty:
 
 
   @st.cache_data
-  def get_session_top_jumpers(session_time, top_n=8):
-    sub = df[df["Godzina"] == session_time].reset_index(drop=True)
-    if len(sub) < 5:
+  def get_session_top_jumpers(current_zakres, session_time, top_n=8):
+    # Ograniczamy do wybranego zakresu z suwaka, aby skoczki były dynamiczne!
+    sub = df.tail(int(current_zakres))
+    sub = sub[sub["Godzina"] == session_time].reset_index(drop=True)
+    if len(sub) < 2:
       return []
     counter = Counter()
     for i in range(1, len(sub)):
@@ -388,11 +353,11 @@ if df is not None and not df.empty:
     return sorted(top_j, key=lambda x: int(x))
 
 
-  even_14, odd_14 = get_session_top15("14:00", zakres)
-  even_22, odd_22 = get_session_top15("22:00", zakres)
+  even_14, odd_14 = get_session_top15(zakres, "14:00")
+  even_22, odd_22 = get_session_top15(zakres, "22:00")
 
-  jumpers_14 = get_session_top_jumpers("14:00", 8)
-  jumpers_22 = get_session_top_jumpers("22:00", 8)
+  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 8)
+  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 8)
 
 
   def get_smart_coupon(session_time, limit, current_zakres):
@@ -410,7 +375,7 @@ if df is not None and not df.empty:
             all_session_nums.append(f"{int(cleaned_v):02d}")
 
     counts = pd.Series(all_session_nums).value_counts()
-    session_jumpers = set(get_session_top_jumpers(session_time, 8))
+    session_jumpers = set(get_session_top_jumpers(current_zakres, session_time, 8))
 
     combined = {}
     for num in [f"{n:02d}" for n in range(1, 81)]:

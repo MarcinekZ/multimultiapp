@@ -304,11 +304,19 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
+  today_str = datetime.datetime.now().strftime("%d.%m.%Y")
+
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  show_ticks_coupon_14 = True if latest_nums_14 else False
-  show_ticks_coupon_22 = True if latest_nums_22 else False
+  # Zabezpieczenie daty dla zakładek (suwaków):
+  # Ptaszki pojawiają się tylko wtedy, gdy w bazie jest wynik z dzisiejszą datą dla danej sesji
+  show_ticks_coupon_14 = (
+      True if last_date_14 == today_str and latest_nums_14 else False
+  )
+  show_ticks_coupon_22 = (
+      True if last_date_22 == today_str and latest_nums_22 else False
+  )
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -368,13 +376,11 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- POPRAWIONY GENERATOR: BAZUJE NA FREKWENCJI + WSPARCIU PRZESKOKÓW ---
   def get_smart_coupon(session_time, limit):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
       return [f"{i:02d}" for i in range(1, limit + 1)]
 
-    # 1. Zliczamy ogólną frekwencję w wybranym zakresie (tak jak w Top 15)
     all_session_nums = []
     for row_vals in df_session.iloc[:, 3:].values:
       for val in row_vals:
@@ -385,7 +391,6 @@ if df is not None and not df.empty:
 
     counts = pd.Series(all_session_nums).value_counts()
 
-    # 2. Liczymy punkty za przeskoki dla wzmocnienia
     rows = df_session.iloc[:, 3:].values
     followers_score = Counter()
     for i in range(1, len(rows) - 1):
@@ -409,19 +414,15 @@ if df is not None and not df.empty:
         for num in d_next:
           followers_score[num] += len(jumped)
 
-    # 3. Łączymy wyniki: frekwencja z zakresu + bonus za przeskoki
     combined = {}
     for num in [f"{n:02d}" for n in range(1, 81)]:
       freq = counts.get(num, 1)
       bonus = followers_score.get(num, 0)
       combined[num] = freq + (bonus * 2)
 
-    # Sortujemy malejąco według punktów
     sorted_best = sorted(
         combined.keys(), key=lambda x: combined[x], reverse=True
     )
-
-    # Zwracamy wybraną liczbę najmocniejszych elementów, posortowaną rosnąco
     return sorted(sorted_best[:limit], key=lambda x: int(x))
 
 

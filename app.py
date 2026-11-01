@@ -307,7 +307,6 @@ if df is not None and not df.empty:
     return " ".join(res)
 
 
-  # --- FUNKCJE BAZUJĄCE NA ZAKRESIE (Z SUWAKA) ---
   @st.cache_data
   def get_session_top15(current_zakres, session_time):
     df_session = df.tail(int(current_zakres))
@@ -338,7 +337,6 @@ if df is not None and not df.empty:
 
   @st.cache_data
   def get_session_top_jumpers(current_zakres, session_time, top_n=8):
-    # Ograniczamy do wybranego zakresu z suwaka, aby skoczki były dynamiczne!
     sub = df.tail(int(current_zakres))
     sub = sub[sub["Godzina"] == session_time].reset_index(drop=True)
     if len(sub) < 2:
@@ -374,13 +372,16 @@ if df is not None and not df.empty:
           if cleaned_v.isdigit():
             all_session_nums.append(f"{int(cleaned_v):02d}")
 
+    # Główna frekwencja (Top z zakresu)
     counts = pd.Series(all_session_nums).value_counts()
+    
+    # Skoczki jako delikatne wsparcie (łagodny bonus, żeby nie zdominowały kuponu)
     session_jumpers = set(get_session_top_jumpers(current_zakres, session_time, 8))
 
     combined = {}
     for num in [f"{n:02d}" for n in range(1, 81)]:
       freq = counts.get(num, 1)
-      bonus = 50 if num in session_jumpers else 0
+      bonus = (counts.mean() * 0.3) if num in session_jumpers else 0
       combined[num] = freq + bonus
 
     sorted_best = sorted(

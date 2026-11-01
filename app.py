@@ -139,7 +139,6 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 
 if df is not None and not df.empty:
   total_draws = len(df)
-  today_str = datetime.date.today().strftime("%d.%m.%Y")
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -271,10 +270,11 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
+  # Weryfikacja dla Top 15 oraz Kuponów opiera się zawsze na ostatnim dostępnym w bazie losowaniu danej sesji
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  show_ticks_coupon_14 = True if (last_date_14 == today_str) else False
+  show_ticks_coupon_14 = True if latest_nums_14 else False
   show_ticks_coupon_22 = True if latest_nums_22 else False
 
 
@@ -446,14 +446,20 @@ if df is not None and not df.empty:
       else 0
   )
 
-  st.markdown(f"**Top 15 Parzyste** *(Trafienia: {hits_14_e}/15)*:")
+  st.markdown(
+      f"**Top 15 Parzyste** *(Ostatnie losowanie - Trafienia:"
+      f" {hits_14_e}/15)*:"
+  )
   st.code(
       format_top15_list(even_14, latest_nums_14, show_ticks_top15_14)
       if even_14
       else "Brak danych",
       language=None,
   )
-  st.markdown(f"**Top 15 Nieparzyste** *(Trafienia: {hits_14_o}/15)*:")
+  st.markdown(
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie - Trafienia:"
+      f" {hits_14_o}/15)*:"
+  )
   st.code(
       format_top15_list(odd_14, latest_nums_14, show_ticks_top15_14)
       if odd_14
@@ -526,9 +532,8 @@ if df is not None and not df.empty:
   )
 
   label_10_14 = (
-      f"*Zakład na {sz_10_14} liczb (Trafienia: {hits_c10_14}/{sz_10_14}):*"
-      if show_ticks_coupon_14
-      else f"*Zakład na {sz_10_14} liczb (Oczekuje na dzisiejsze losowanie):*"
+      f"*Zakład na {sz_10_14} liczb (Trafienia:"
+      f" {hits_c10_14}/{sz_10_14}):*"
   )
   st.markdown(label_10_14)
   st.code(
@@ -539,9 +544,8 @@ if df is not None and not df.empty:
   col_14_a, col_14_b = st.columns(2)
   with col_14_a:
     label_5_14 = (
-        f"*Zakład na {sz_5_14} liczb (Trafienia: {hits_c5_14}/{sz_5_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_5_14} liczb (Oczekuje na dzisiejsze losowanie):*"
+        f"*Zakład na {sz_5_14} liczb (Trafienia:"
+        f" {hits_c5_14}/{sz_5_14}):*"
     )
     st.markdown(label_5_14)
     st.code(
@@ -550,9 +554,8 @@ if df is not None and not df.empty:
     )
   with col_14_b:
     label_3_14 = (
-        f"*Zakład na {sz_3_14} liczb (Trafienia: {hits_c3_14}/{sz_3_14}):*"
-        if show_ticks_coupon_14
-        else f"*Zakład na {sz_3_14} liczb (Oczekuje na dzisiejsze losowanie):*"
+        f"*Zakład na {sz_3_14} liczb (Trafienia:"
+        f" {hits_c3_14}/{sz_3_14}):*"
     )
     st.markdown(label_3_14)
     st.code(
@@ -578,7 +581,7 @@ if df is not None and not df.empty:
 
   st.markdown(
       "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" *(Trafienia: {hits_22_e}/15)*:"
+      f" *(Ostatnie losowanie - Trafienia: {hits_22_e}/15)*:"
   )
   st.code(
       format_top15_list(even_22, latest_nums_22, show_ticks_top15_22)
@@ -586,7 +589,10 @@ if df is not None and not df.empty:
       else "Brak danych",
       language=None,
   )
-  st.markdown(f"**Top 15 Nieparzyste** *(Trafienia: {hits_22_o}/15)*:")
+  st.markdown(
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie - Trafienia:"
+      f" {hits_22_o}/15)*:"
+  )
   st.code(
       format_top15_list(odd_22, latest_nums_22, show_ticks_top15_22)
       if odd_22
@@ -658,7 +664,10 @@ if df is not None and not df.empty:
       else 0
   )
 
-  label_10_22 = f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia: {hits_c10_22}/{sz_10_22}):*"
+  label_10_22 = (
+      f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia:"
+      f" {hits_c10_22}/{sz_10_22}):*"
+  )
   st.markdown(label_10_22)
   st.code(
       format_coupon_list(c_10_22, latest_nums_22, show_ticks_coupon_22),
@@ -667,14 +676,20 @@ if df is not None and not df.empty:
 
   col_22_a, col_22_b = st.columns(2)
   with col_22_a:
-    label_5_22 = f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia: {hits_c5_22}/{sz_5_22}):*"
+    label_5_22 = (
+        f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia:"
+        f" {hits_c5_22}/{sz_5_22}):*"
+    )
     st.markdown(label_5_22)
     st.code(
         format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
         language=None,
     )
   with col_22_b:
-    label_3_22 = f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia: {hits_c3_22}/{sz_3_22}):*"
+    label_3_22 = (
+        f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia:"
+        f" {hits_c3_22}/{sz_3_22}):*"
+    )
     st.markdown(label_3_22)
     st.code(
         format_coupon_list(c_3_22, latest_nums_22, show_ticks_coupon_22),

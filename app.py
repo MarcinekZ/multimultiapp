@@ -309,8 +309,6 @@ if df is not None and not df.empty:
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # Zabezpieczenie daty dla zakładek (suwaków):
-  # Ptaszki pojawiają się tylko wtedy, gdy w bazie jest wynik z dzisiejszą datą dla danej sesji
   show_ticks_coupon_14 = (
       True if last_date_14 == today_str and latest_nums_14 else False
   )
@@ -346,6 +344,7 @@ if df is not None and not df.empty:
     return " ".join(res)
 
 
+  # --- FUNKCJE TOP 15 ORAZ TOP PRZESKOKÓW DLA SESJI ---
   def get_session_top15(session_time):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
@@ -372,10 +371,28 @@ if df is not None and not df.empty:
     return even_sorted, odd_sorted
 
 
+  def get_session_top_jumpers(session_time, top_n=8):
+    sub = df[df["Godzina"] == session_time].reset_index(drop=True)
+    if len(sub) < 5:
+      return []
+    counter = Counter()
+    for i in range(1, len(sub)):
+      prev_nums = set(sub.iloc[i - 1, 3:23].dropna().astype(int))
+      curr_nums = set(sub.iloc[i, 3:23].dropna().astype(int))
+      for n in prev_nums.intersection(curr_nums):
+        counter[n] += 1
+    top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
+    return sorted(top_j, key=lambda x: int(x))
+
+
   even_14, odd_14 = get_session_top15("14:00")
   even_22, odd_22 = get_session_top15("22:00")
 
+  jumpers_14 = get_session_top_jumpers("14:00", 8)
+  jumpers_22 = get_session_top_jumpers("22:00", 8)
 
+
+  # --- INTELIGENTNY GENERATOR Z WSPARCIEM DLA PRZESKOKÓW SESYJNYCH ---
   def get_smart_coupon(session_time, limit):
     df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
     if df_session.empty:
@@ -391,34 +408,15 @@ if df is not None and not df.empty:
 
     counts = pd.Series(all_session_nums).value_counts()
 
-    rows = df_session.iloc[:, 3:].values
-    followers_score = Counter()
-    for i in range(1, len(rows) - 1):
-      d_prev = set([
-          f"{int(str(v).replace('.0', '').strip()):02d}"
-          for v in rows[i - 1]
-          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
-      ])
-      d_curr = set([
-          f"{int(str(v).replace('.0', '').strip()):02d}"
-          for v in rows[i]
-          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
-      ])
-      d_next = [
-          f"{int(str(v).replace('.0', '').strip()):02d}"
-          for v in rows[i + 1]
-          if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
-      ]
-      jumped = d_prev.intersection(d_curr)
-      if jumped:
-        for num in d_next:
-          followers_score[num] += len(jumped)
+    # Pobieramy dedykowane przeskoki dla danej sesji
+    session_jumpers = set(get_session_top_jumpers(session_time, 8))
 
     combined = {}
     for num in [f"{n:02d}" for n in range(1, 81)]:
       freq = counts.get(num, 1)
-      bonus = followers_score.get(num, 0)
-      combined[num] = freq + (bonus * 2)
+      # Silny bonus punktowy dla liczb będących liderami przeskoku w tej sesji
+      bonus = 50 if num in session_jumpers else 0
+      combined[num] = freq + bonus
 
     sorted_best = sorted(
         combined.keys(), key=lambda x: combined[x], reverse=True
@@ -426,7 +424,7 @@ if df is not None and not df.empty:
     return sorted(sorted_best[:limit], key=lambda x: int(x))
 
 
-  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00) ---
+  # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   hits_14_e = (
@@ -452,6 +450,7 @@ if df is not None and not df.empty:
       else "Brak danych",
       language=None,
   )
+
   st.markdown(
       f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_14_o}/15)*:"
@@ -465,10 +464,26 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown(
-      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH + Filtry (Cykl 14:00"
-      " ➡️ 14:00):**"
+  # Nowy dedykowany Top Przeskoków 14:00
+  hits_j14 = (
+      sum(1 for n in jumpers_14 if n in latest_nums_14)
+      if show_ticks_top15_14
+      else 0
   )
+  st.markdown(
+      f"**🔥 Top 8 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia:"
+      f" {hits_j14}/8)*:"
+      if show_ticks_top15_14
+      else "**🔥 Top 8 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
+  )
+  st.code(
+      format_top15_list(jumpers_14, latest_nums_14, show_ticks_top15_14)
+      if jumpers_14
+      else "Brak danych",
+      language=None,
+  )
+
+  st.markdown("🎯 **Zakłady Wygenerowane (Sesja 14:00):**")
 
   col_s14_1, col_s14_2, col_s14_3 = st.columns(3)
   with col_s14_1:
@@ -487,44 +502,17 @@ if df is not None and not df.empty:
   c_3_14 = get_smart_coupon("14:00", sz_3_14)
 
   hits_c10_14 = (
-      sum(
-          1
-          for n in c_10_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
+      sum(1 for n in c_10_14 if n in latest_nums_14)
       if show_ticks_coupon_14
       else 0
   )
   hits_c5_14 = (
-      sum(
-          1
-          for n in c_5_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
+      sum(1 for n in c_5_14 if n in latest_nums_14)
       if show_ticks_coupon_14
       else 0
   )
   hits_c3_14 = (
-      sum(
-          1
-          for n in c_3_14
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_14
-      )
+      sum(1 for n in c_3_14 if n in latest_nums_14)
       if show_ticks_coupon_14
       else 0
   )
@@ -569,7 +557,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00) ---
+  # --- 4. TOP 15 ORAZ TOP PRZESKOKÓW (22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   hits_22_e = (
@@ -596,6 +584,7 @@ if df is not None and not df.empty:
       else "Brak danych",
       language=None,
   )
+
   st.markdown(
       f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
       f" {hits_22_o}/15)*:"
@@ -609,10 +598,26 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  st.markdown(
-      "🎯 **Liczby najczęściej występujące PO PRZESKOKACH + Filtry (Cykl 22:00"
-      " ➡️ 22:00):**"
+  # Nowy dedykowany Top Przeskoków 22:00
+  hits_j22 = (
+      sum(1 for n in jumpers_22 if n in latest_nums_22)
+      if show_ticks_top15_22
+      else 0
   )
+  st.markdown(
+      f"**🔥 Top 8 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia:"
+      f" {hits_j22}/8)*:"
+      if show_ticks_top15_22
+      else "**🔥 Top 8 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
+  )
+  st.code(
+      format_top15_list(jumpers_22, latest_nums_22, show_ticks_top15_22)
+      if jumpers_22
+      else "Brak danych",
+      language=None,
+  )
+
+  st.markdown("🎯 **Zakłady Wygenerowane (Sesja 22:00):**")
 
   col_s22_1, col_s22_2, col_s22_3 = st.columns(3)
   with col_s22_1:
@@ -631,53 +636,26 @@ if df is not None and not df.empty:
   c_3_22 = get_smart_coupon("22:00", sz_3_22)
 
   hits_c10_22 = (
-      sum(
-          1
-          for n in c_10_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
+      sum(1 for n in c_10_22 if n in latest_nums_22)
       if show_ticks_coupon_22
       else 0
   )
   hits_c5_22 = (
-      sum(
-          1
-          for n in c_5_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
+      sum(1 for n in c_5_22 if n in latest_nums_22)
       if show_ticks_coupon_22
       else 0
   )
   hits_c3_22 = (
-      sum(
-          1
-          for n in c_3_22
-          if (
-              f"{int(n):02d}"
-              if str(n).replace(".0", "").isdigit()
-              else str(n)
-          )
-          in latest_nums_22
-      )
+      sum(1 for n in c_3_22 if n in latest_nums_22)
       if show_ticks_coupon_22
       else 0
   )
 
   label_10_22 = (
-      f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia:"
+      f"*Zakład na {sz_10_22} liczb (Trafienia:"
       f" {hits_c10_22}/{sz_10_22}):*"
       if show_ticks_coupon_22
-      else f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady):*"
+      else f"*Zakład na {sz_10_22} liczb:*"
   )
   st.markdown(label_10_22)
   st.code(
@@ -688,10 +666,10 @@ if df is not None and not df.empty:
   col_22_a, col_22_b = st.columns(2)
   with col_22_a:
     label_5_22 = (
-        f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia:"
+        f"*Zakład na {sz_5_22} liczb (Trafienia:"
         f" {hits_c5_22}/{sz_5_22}):*"
         if show_ticks_coupon_22
-        else f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne):*"
+        else f"*Zakład na {sz_5_22} liczb:*"
     )
     st.markdown(label_5_22)
     st.code(
@@ -700,10 +678,10 @@ if df is not None and not df.empty:
     )
   with col_22_b:
     label_3_22 = (
-        f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia:"
+        f"*Zakład na {sz_3_22} liczb (Trafienia:"
         f" {hits_c3_22}/{sz_3_22}):*"
         if show_ticks_coupon_22
-        else f"*Zakład na {sz_3_22} liczb (Mieszane):*"
+        else f"*Zakład na {sz_3_22} liczb:*"
     )
     st.markdown(label_3_22)
     st.code(

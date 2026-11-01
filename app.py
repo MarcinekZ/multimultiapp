@@ -14,7 +14,6 @@ st.set_page_config(
 
 
 def load_data():
-  # 1. Definiujemy twardy fallback z kluczowym wczorajszym losowaniem #17119 (31.10.2026 22:00)
   guaranteed_rows = [
       [
           "17119",
@@ -45,7 +44,6 @@ def load_data():
 
   df_fallback = pd.DataFrame(guaranteed_rows)
 
-  # 2. Ładujemy lokalny plik CSV jeśli istnieje
   df_csv = None
   csv_files = glob.glob("*.csv")
   for fname in csv_files:
@@ -57,7 +55,6 @@ def load_data():
     except Exception:
       continue
 
-  # 3. Próbujemy pobrać dane z Live API
   df_live = None
   try:
     session = requests.Session()
@@ -111,7 +108,6 @@ def load_data():
   except Exception:
     pass
 
-  # Łączymy źródła, stawiając na pierwszym miejscu pewny fallback + API / CSV
   dfs = [df_fallback]
   if df_live is not None and not df_live.empty:
     dfs.append(df_live)
@@ -120,7 +116,6 @@ def load_data():
 
   df = pd.concat(dfs, ignore_index=True)
 
-  # Standardyzacja kolumn
   if df.shape[1] >= 23:
     df = df.iloc[:, :23]
     cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
@@ -309,11 +304,12 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  show_ticks_top15_14 = True if latest_nums_14 else False
-  show_ticks_top15_22 = True if latest_nums_22 else False
+  # ODWRACAMY WERYFIKACJĘ: 14:00 sprawdza się w 22:00, a 22:00 sprawdza się w 14:00
+  show_ticks_top15_14 = True if latest_nums_22 else False
+  show_ticks_top15_22 = True if latest_nums_14 else False
 
-  show_ticks_coupon_14 = True if latest_nums_14 else False
-  show_ticks_coupon_22 = True if latest_nums_22 else False
+  show_ticks_coupon_14 = True if latest_nums_22 else False
+  show_ticks_coupon_22 = True if latest_nums_14 else False
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -470,36 +466,36 @@ if df is not None and not df.empty:
     return sorted(selected, key=lambda x: int(x))[:limit]
 
 
-  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00 ➡️ 14:00) ---
+  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00 ➡️ weryfikacja w 22:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   hits_14_e = (
-      sum(1 for n in even_14 if n in latest_nums_14)
+      sum(1 for n in even_14 if n in latest_nums_22)
       if show_ticks_top15_14
       else 0
   )
   hits_14_o = (
-      sum(1 for n in odd_14 if n in latest_nums_14)
+      sum(1 for n in odd_14 if n in latest_nums_22)
       if show_ticks_top15_14
       else 0
   )
 
   st.markdown(
-      f"**Top 15 Parzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
+      f"**Top 15 Parzyste** *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
       f" {hits_14_e}/15)*:"
   )
   st.code(
-      format_top15_list(even_14, latest_nums_14, show_ticks_top15_14)
+      format_top15_list(even_14, latest_nums_22, show_ticks_top15_14)
       if even_14
       else "Brak danych",
       language=None,
   )
   st.markdown(
-      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
       f" {hits_14_o}/15)*:"
   )
   st.code(
-      format_top15_list(odd_14, latest_nums_14, show_ticks_top15_14)
+      format_top15_list(odd_14, latest_nums_22, show_ticks_top15_14)
       if odd_14
       else "Brak danych",
       language=None,
@@ -535,7 +531,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_14
+          in latest_nums_22
       )
       if show_ticks_coupon_14
       else 0
@@ -549,7 +545,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_14
+          in latest_nums_22
       )
       if show_ticks_coupon_14
       else 0
@@ -563,7 +559,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_14
+          in latest_nums_22
       )
       if show_ticks_coupon_14
       else 0
@@ -575,7 +571,7 @@ if df is not None and not df.empty:
   )
   st.markdown(label_10_14)
   st.code(
-      format_coupon_list(c_10_14, latest_nums_14, show_ticks_coupon_14),
+      format_coupon_list(c_10_14, latest_nums_22, show_ticks_coupon_14),
       language=None,
   )
 
@@ -587,7 +583,7 @@ if df is not None and not df.empty:
     )
     st.markdown(label_5_14)
     st.code(
-        format_coupon_list(c_5_14, latest_nums_14, show_ticks_coupon_14),
+        format_coupon_list(c_5_14, latest_nums_22, show_ticks_coupon_14),
         language=None,
     )
   with col_14_b:
@@ -597,43 +593,43 @@ if df is not None and not df.empty:
     )
     st.markdown(label_3_14)
     st.code(
-        format_coupon_list(c_3_14, latest_nums_14, show_ticks_coupon_14),
+        format_coupon_list(c_3_14, latest_nums_22, show_ticks_coupon_14),
         language=None,
     )
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00 ➡️ 22:00) ---
+  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00 ➡️ weryfikacja w 14:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   hits_22_e = (
-      sum(1 for n in even_22 if n in latest_nums_22)
+      sum(1 for n in even_22 if n in latest_nums_14)
       if show_ticks_top15_22
       else 0
   )
   hits_22_o = (
-      sum(1 for n in odd_22 if n in latest_nums_22)
+      sum(1 for n in odd_22 if n in latest_nums_14)
       if show_ticks_top15_22
       else 0
   )
 
   st.markdown(
       "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
-      f" *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
+      f" *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_22_e}/15)*:"
   )
   st.code(
-      format_top15_list(even_22, latest_nums_22, show_ticks_top15_22)
+      format_top15_list(even_22, latest_nums_14, show_ticks_top15_22)
       if even_22
       else "Brak danych",
       language=None,
   )
   st.markdown(
-      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
+      f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_22_o}/15)*:"
   )
   st.code(
-      format_top15_list(odd_22, latest_nums_22, show_ticks_top15_22)
+      format_top15_list(odd_22, latest_nums_14, show_ticks_top15_22)
       if odd_22
       else "Brak danych",
       language=None,
@@ -669,7 +665,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_22
+          in latest_nums_14
       )
       if show_ticks_coupon_22
       else 0
@@ -683,7 +679,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_22
+          in latest_nums_14
       )
       if show_ticks_coupon_22
       else 0
@@ -697,7 +693,7 @@ if df is not None and not df.empty:
               if str(n).replace(".0", "").isdigit()
               else str(n)
           )
-          in latest_nums_22
+          in latest_nums_14
       )
       if show_ticks_coupon_22
       else 0
@@ -709,7 +705,7 @@ if df is not None and not df.empty:
   )
   st.markdown(label_10_22)
   st.code(
-      format_coupon_list(c_10_22, latest_nums_22, show_ticks_coupon_22),
+      format_coupon_list(c_10_22, latest_nums_14, show_ticks_coupon_22),
       language=None,
   )
 
@@ -721,7 +717,7 @@ if df is not None and not df.empty:
     )
     st.markdown(label_5_22)
     st.code(
-        format_coupon_list(c_5_22, latest_nums_22, show_ticks_coupon_22),
+        format_coupon_list(c_5_22, latest_nums_14, show_ticks_coupon_22),
         language=None,
     )
   with col_22_b:
@@ -731,7 +727,7 @@ if df is not None and not df.empty:
     )
     st.markdown(label_3_22)
     st.code(
-        format_coupon_list(c_3_22, latest_nums_22, show_ticks_coupon_22),
+        format_coupon_list(c_3_22, latest_nums_14, show_ticks_coupon_22),
         language=None,
     )
 

@@ -17,9 +17,9 @@ def load_data():
   df_live = None
   try:
     session = requests.Session()
-    # Zwiększamy pobieranie do 400 losowań, aby mieć pewność, że wczorajsze 22:00 na pewno wpadnie
+    # Zwiększamy pobieranie do 1000 losowań, aby API Lotto na pewno zwróciło zaległe wieczorne losowania
     api_url = (
-        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=400"
+        "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=1000"
     )
     headers = {
         "User-Agent": (
@@ -140,7 +140,6 @@ if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=T
 
 if df is not None and not df.empty:
   total_draws = len(df)
-  today_str = datetime.date.today().strftime("%d.%m.%Y")
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -272,8 +271,6 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Flagi weryfikacji dla Top 15 i Kuponów:
-  # Pokazują trafienia z ostatniego dostępnego w bazie losowania danej sesji
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 

@@ -14,6 +14,18 @@ st.set_page_config(
 
 
 def load_data():
+  # 1. Pobieramy dane z lokalnego pliku CSV (aktualizowanego przez GitHub Actions)
+  df_csv = None
+  csv_files = glob.glob("*.csv")
+  for fname in csv_files:
+    try:
+      df_csv = pd.read_csv(fname, header=None)
+      if not df_csv.empty:
+        break
+    except Exception:
+      continue
+
+  # 2. Pobieramy dane z Live API
   df_live = None
   try:
     session = requests.Session()
@@ -52,7 +64,6 @@ def load_data():
         hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
         time_str = "14:00" if hour_val < 18 else "22:00"
 
-        # Bezpieczne pobieranie wyników z różnych możliwych kluczy API
         nums = item.get("results", [])
         if not nums:
           nums = item.get("resultsJson", [])
@@ -68,35 +79,21 @@ def load_data():
   except Exception:
     pass
 
-  df_csv = None
-  csv_files = glob.glob("*.csv")
-  for fname in csv_files:
-    try:
-      df_csv = pd.read_csv(fname, header=None)
-      if not df_csv.empty:
-        break
-    except Exception:
-      continue
-
+  # 3. Łączymy oba źródła (CSV + Live API), aby nic nie zostało pominięte
+  dfs_to_concat = []
+  if df_csv is not None and not df_csv.empty:
+    dfs_to_concat.append(df_csv)
   if df_live is not None and not df_live.empty:
-    st.sidebar.success("🟢 Status: Live API (Zsynchronizowane)")
-    df = df_live
-  elif df_csv is not None and not df_csv.empty:
-    st.sidebar.error(
-        "🔴 Status: Plik lokalny CSV (Tryb awaryjny - stabilny)"
-    )
-    df = df_csv
-  else:
+    dfs_to_concat.append(df_live)
+
+  if not dfs_to_concat:
     return None
+
+  df = pd.concat(dfs_to_concat, ignore_index=True)
 
   num_cols = df.shape[1]
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, num_cols - 2)]
-  if len(df.columns) == len(cols):
-    df.columns = cols
-  else:
-    df.columns = ["ID", "Data", "Godzina"] + [
-        f"L{i}" for i in range(1, df.shape[1] - 2)
-    ]
+  df.columns = cols[: len(df.columns)]
 
   if "ID" in df.columns:
     df["ID"] = (
@@ -137,10 +134,13 @@ df = load_data()
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-if st.button("🔄 Odśwież i pobierz najnowsze z sieci", use_container_width=True):
+if st.sidebar.button("🔄 Odśwież i zsynchronizuj", use_container_width=True):
   st.rerun()
 
 if df is not None and not df.empty:
+  st.sidebar.success(
+      f"🟢 Baza aktywna (Łącznie losowań: {len(df)})"
+  )
   total_draws = len(df)
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
@@ -762,9 +762,9 @@ if df is not None and not df.empty:
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
         if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace(".0", "").strip()
+        else str(v).replace('.0', '').strip()
         for v in row.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
+        if pd.notna(v) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

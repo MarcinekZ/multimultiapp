@@ -241,6 +241,7 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
+  # Ostatnie losowanie 14:00 w bazie wraz z jego datą
   latest_nums_14 = set()
   last_date_14 = ""
   if not df_14_all.empty:
@@ -254,6 +255,7 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
+  # Ostatnie losowanie 22:00 w bazie wraz z jego datą
   latest_nums_22 = set()
   last_date_22 = ""
   if not df_22_all.empty:
@@ -269,11 +271,16 @@ if df is not None and not df.empty:
 
   today_str = datetime.datetime.now().strftime("%d.%m.%Y")
 
+  # Ptaszki dla 14:00 pokazujemy TYLKO wtedy, gdy ostatnie losowanie 14:00 jest z dzisiaj ORAZ w bazie nie ma nowszego losowania o 22:00 z dzisiaj
+  latest_overall = df.iloc[-1]
+  is_latest_22_today = (str(latest_overall["Godzina"]) == "22:00" and str(latest_overall["Data"]).strip() == today_str)
+
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
+  # Jeśli o 22:00 odbyło się dzisiejsze losowanie, to sesja 14:00 jest już historyczna na dziś i nie weryfikujemy jej na żywo ptaszkami w zestawach
   show_ticks_coupon_14 = (
-      True if last_date_14 == today_str and latest_nums_14 else False
+      True if last_date_14 == today_str and latest_nums_14 and not is_latest_22_today else False
   )
   show_ticks_coupon_22 = (
       True if last_date_22 == today_str and latest_nums_22 else False
@@ -377,7 +384,6 @@ if df is not None and not df.empty:
     top_freq = sorted(counts.index.tolist(), key=lambda x: counts[x], reverse=True)
     session_jumpers = get_session_top_jumpers(current_zakres, session_time, 5)
 
-    # Zestaw 1: Strategia Skoczka (Skoczki + Top częstotliwości)
     set1 = []
     for j in session_jumpers:
       if len(set1) < limit:
@@ -388,7 +394,6 @@ if df is not None and not df.empty:
       if n not in set1:
         set1.append(n)
 
-    # Zestaw 2: Strategia Czystego Topu (Tylko najwyższe frekwencje)
     set2 = []
     for n in top_freq:
       if len(set2) >= limit:
@@ -396,7 +401,6 @@ if df is not None and not df.empty:
       if n not in set2:
         set2.append(n)
 
-    # Zestaw 3: Strategia Alternatywna / Przesunięta (Przesunięta pula frekwencji)
     set3 = []
     alt_pool = top_freq[2:] + top_freq[:2]
     for n in alt_pool:
@@ -405,7 +409,6 @@ if df is not None and not df.empty:
       if n not in set3:
         set3.append(n)
 
-    # Dopełnienie do limitu na wypadek braku unikalnych
     for i in range(1, 81):
       s_num = f"{i:02d}"
       if len(set1) < limit and s_num not in set1: set1.append(s_num)
@@ -479,7 +482,6 @@ if df is not None and not df.empty:
 
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 14:00):**")
 
-  # Suwaki ustawione od 1 do 10 (maksymalnie 10 liczb na kupon Multi Multi)
   col_14_s1, col_14_c1 = st.columns([1, 3])
   with col_14_s1:
     sz_14_1 = st.slider("Zestaw 1 (1-10):", 1, 10, 8, key="sz_14_1")

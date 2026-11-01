@@ -304,19 +304,11 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  today_str = datetime.datetime.now().strftime("%d.%m.%Y")
-
-  # Top 15 pokazuje trafienia z ostatniego zakończonego losowania
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # ZAKŁADY (suwaki):
-  # - Dla 14:00 losowanie już się odbyło, więc ptaszki MAJĄ BYĆ włączone
   show_ticks_coupon_14 = True if latest_nums_14 else False
-  # - Dla 22:00 dzisiejsze losowanie jeszcze się nie odbyło (data w bazie to jeszcze nie dzisiaj), więc ptaszki schowane
-  show_ticks_coupon_22 = (
-      True if last_date_22 == today_str and latest_nums_22 else False
-  )
+  show_ticks_coupon_22 = True if latest_nums_22 else False
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -376,28 +368,26 @@ if df is not None and not df.empty:
   even_22, odd_22 = get_session_top15("22:00")
 
 
-  # --- ROZBUDOWANY GENERATOR: NASTĘPCY PO PRZESKOKACH + FILTRY ---
-  def get_followers_with_filters(session_time, limit, seed):
-    df_session = df[df["Godzina"] == session_time]
-    if len(df_session) < 5:
+  # --- POPRAWIONY GENERATOR: BAZUJE NA FREKWENCJI + WSPARCIU PRZESKOKÓW ---
+  def get_smart_coupon(session_time, limit):
+    df_session = df_analyzed[df_analyzed["Godzina"] == session_time]
+    if df_session.empty:
       return [f"{i:02d}" for i in range(1, limit + 1)]
 
-    recent_session_rows = df_session.tail(4)
-    recent_session_nums = set()
-    for row_vals in recent_session_rows.iloc[:, 3:].values:
-      for v in row_vals:
-        if pd.notna(v) and str(v).replace(".0", "").strip().isdigit():
-          recent_session_nums.add(
-              f"{int(str(v).replace('.0', '').strip()):02d}"
-          )
+    # 1. Zliczamy ogólną frekwencję w wybranym zakresie (tak jak w Top 15)
+    all_session_nums = []
+    for row_vals in df_session.iloc[:, 3:].values:
+      for val in row_vals:
+        if pd.notna(val) and str(val).strip():
+          cleaned_v = str(val).replace(".0", "").strip()
+          if cleaned_v.isdigit():
+            all_session_nums.append(f"{int(cleaned_v):02d}")
 
-    all_80 = [f"{n:02d}" for n in range(1, 81)]
-    cold_pool = {n for n in all_80 if n not in recent_session_nums}
+    counts = pd.Series(all_session_nums).value_counts()
 
-    df_analyzed_session = df_session.tail(int(zakres) + 2)
-    rows = df_analyzed_session.iloc[:, 3:].values
+    # 2. Liczymy punkty za przeskoki dla wzmocnienia
+    rows = df_session.iloc[:, 3:].values
     followers_score = Counter()
-
     for i in range(1, len(rows) - 1):
       d_prev = set([
           f"{int(str(v).replace('.0', '').strip()):02d}"
@@ -414,63 +404,25 @@ if df is not None and not df.empty:
           for v in rows[i + 1]
           if pd.notna(v) and str(v).replace(".0", "").strip().isdigit()
       ]
-
       jumped = d_prev.intersection(d_curr)
       if jumped:
         for num in d_next:
           followers_score[num] += len(jumped)
 
-    combined_scores = {}
-    for n in all_80:
-      base_score = followers_score.get(n, 1)
-      if n in cold_pool:
-        combined_scores[n] = base_score * 1.5
-      else:
-        combined_scores[n] = base_score
+    # 3. Łączymy wyniki: frekwencja z zakresu + bonus za przeskoki
+    combined = {}
+    for num in [f"{n:02d}" for n in range(1, 81)]:
+      freq = counts.get(num, 1)
+      bonus = followers_score.get(num, 0)
+      combined[num] = freq + (bonus * 2)
 
-    sorted_candidates = sorted(
-        all_80, key=lambda x: combined_scores[x], reverse=True
+    # Sortujemy malejąco według punktów
+    sorted_best = sorted(
+        combined.keys(), key=lambda x: combined[x], reverse=True
     )
 
-    rng = random.Random(seed)
-    selected = []
-
-    def get_decade(num_str):
-      return (int(num_str) - 1) // 10
-
-    if session_time == "22:00":
-      if limit > 5:
-        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
-        decade_counts = {d: 0 for d in range(8)}
-        for c in even_pool:
-          dec = get_decade(c)
-          if decade_counts[dec] < 2 and len(selected) < limit:
-            selected.append(c)
-            decade_counts[dec] += 1
-        for c in even_pool:
-          if len(selected) < limit and c not in selected:
-            selected.append(c)
-      elif limit > 3:
-        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
-        odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
-        selected = even_pool[:3] + odd_pool[: max(0, limit - 3)]
-      else:
-        even_pool = [c for c in sorted_candidates if int(c) % 2 == 0]
-        odd_pool = [c for c in sorted_candidates if int(c) % 2 != 0]
-        selected = even_pool[: min(limit, 2)] + odd_pool[: max(0, limit - 2)]
-    else:
-      decade_counts = {d: 0 for d in range(8)}
-      max_per_dec = 2 if limit > 5 else 1
-      for c in sorted_candidates:
-        dec = get_decade(c)
-        if decade_counts[dec] < max_per_dec and len(selected) < limit:
-          selected.append(c)
-          decade_counts[dec] += 1
-      for c in sorted_candidates:
-        if len(selected) < limit and c not in selected:
-          selected.append(c)
-
-    return sorted(selected, key=lambda x: int(x))[:limit]
+    # Zwracamy wybraną liczbę najmocniejszych elementów, posortowaną rosnąco
+    return sorted(sorted_best[:limit], key=lambda x: int(x))
 
 
   # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00) ---
@@ -529,9 +481,9 @@ if df is not None and not df.empty:
   with col_s14_3:
     sz_3_14 = st.slider("Suwak mały (14:00):", 1, 3, 3, key="slider_3_14")
 
-  c_10_14 = get_followers_with_filters("14:00", sz_10_14, 100)
-  c_5_14 = get_followers_with_filters("14:00", sz_5_14, 200)
-  c_3_14 = get_followers_with_filters("14:00", sz_3_14, 250)
+  c_10_14 = get_smart_coupon("14:00", sz_10_14)
+  c_5_14 = get_smart_coupon("14:00", sz_5_14)
+  c_3_14 = get_smart_coupon("14:00", sz_3_14)
 
   hits_c10_14 = (
       sum(
@@ -673,9 +625,9 @@ if df is not None and not df.empty:
   with col_s22_3:
     sz_3_22 = st.slider("Suwak mały (22:00):", 1, 3, 3, key="slider_3_22")
 
-  c_10_22 = get_followers_with_filters("22:00", sz_10_22, 300)
-  c_5_22 = get_followers_with_filters("22:00", sz_5_22, 400)
-  c_3_22 = get_followers_with_filters("22:00", sz_3_22, 450)
+  c_10_22 = get_smart_coupon("22:00", sz_10_22)
+  c_5_22 = get_smart_coupon("22:00", sz_5_22)
+  c_3_22 = get_smart_coupon("22:00", sz_3_22)
 
   hits_c10_22 = (
       sum(

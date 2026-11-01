@@ -304,12 +304,22 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # ODWRACAMY WERYFIKACJĘ: 14:00 sprawdza się w 22:00, a 22:00 sprawdza się w 14:00
-  show_ticks_top15_14 = True if latest_nums_22 else False
-  show_ticks_top15_22 = True if latest_nums_14 else False
+  # ZABEZPIECZENIE DATY: Ptaszki pojawiają się tylko wtedy, gdy w bazie jest wynik z dzisiejszą datą dla danej sesji
+  today_str = datetime.datetime.now().strftime("%d.%m.%Y")
 
-  show_ticks_coupon_14 = True if latest_nums_22 else False
-  show_ticks_coupon_22 = True if latest_nums_14 else False
+  show_ticks_top15_14 = (
+      True if last_date_22 == today_str and latest_nums_22 else False
+  )
+  show_ticks_top15_22 = (
+      True if last_date_14 == today_str and latest_nums_14 else False
+  )
+
+  show_ticks_coupon_14 = (
+      True if last_date_22 == today_str and latest_nums_22 else False
+  )
+  show_ticks_coupon_22 = (
+      True if last_date_14 == today_str and latest_nums_14 else False
+  )
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -466,7 +476,7 @@ if df is not None and not df.empty:
     return sorted(selected, key=lambda x: int(x))[:limit]
 
 
-  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00 ➡️ weryfikacja w 22:00) ---
+  # --- 3. TOP 15 ORAZ KUPONY PO PRZESKOKACH (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
 
   hits_14_e = (
@@ -568,6 +578,8 @@ if df is not None and not df.empty:
   label_10_14 = (
       f"*Zakład na {sz_10_14} liczb (Trafienia:"
       f" {hits_c10_14}/{sz_10_14}):*"
+      if show_ticks_coupon_14
+      else f"*Zakład na {sz_10_14} liczb:*"
   )
   st.markdown(label_10_14)
   st.code(
@@ -580,6 +592,8 @@ if df is not None and not df.empty:
     label_5_14 = (
         f"*Zakład na {sz_5_14} liczb (Trafienia:"
         f" {hits_c5_14}/{sz_5_14}):*"
+        if show_ticks_coupon_14
+        else f"*Zakład na {sz_5_14} liczb:*"
     )
     st.markdown(label_5_14)
     st.code(
@@ -590,6 +604,8 @@ if df is not None and not df.empty:
     label_3_14 = (
         f"*Zakład na {sz_3_14} liczb (Trafienia:"
         f" {hits_c3_14}/{sz_3_14}):*"
+        if show_ticks_coupon_14
+        else f"*Zakład na {sz_3_14} liczb:*"
     )
     st.markdown(label_3_14)
     st.code(
@@ -599,7 +615,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00 ➡️ weryfikacja w 14:00) ---
+  # --- 4. TOP 15 ORAZ KUPONY PO PRZESKOKACH (22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
 
   hits_22_e = (
@@ -617,6 +633,8 @@ if df is not None and not df.empty:
       "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**"
       f" *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_22_e}/15)*:"
+      if show_ticks_top15_22
+      else "**Top 15 Parzyste: `✅ [Rekomendowany Priorytet]`**:"
   )
   st.code(
       format_top15_list(even_22, latest_nums_14, show_ticks_top15_22)
@@ -627,6 +645,8 @@ if df is not None and not df.empty:
   st.markdown(
       f"**Top 15 Nieparzyste** *(Ostatnie losowanie [{last_date_14}] - Trafienia:"
       f" {hits_22_o}/15)*:"
+      if show_ticks_top15_22
+      else "**Top 15 Nieparzyste:**"
   )
   st.code(
       format_top15_list(odd_22, latest_nums_14, show_ticks_top15_22)
@@ -702,6 +722,8 @@ if df is not None and not df.empty:
   label_10_22 = (
       f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady) (Trafienia:"
       f" {hits_c10_22}/{sz_10_22}):*"
+      if show_ticks_coupon_22
+      else f"*Zakład na {sz_10_22} liczb (Parzyste + Dekady):*"
   )
   st.markdown(label_10_22)
   st.code(
@@ -714,6 +736,8 @@ if df is not None and not df.empty:
     label_5_22 = (
         f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne) (Trafienia:"
         f" {hits_c5_22}/{sz_5_22}):*"
+        if show_ticks_coupon_22
+        else f"*Zakład na {sz_5_22} liczb (Mieszane + Zimne):*"
     )
     st.markdown(label_5_22)
     st.code(
@@ -724,6 +748,8 @@ if df is not None and not df.empty:
     label_3_22 = (
         f"*Zakład na {sz_3_22} liczb (Mieszane) (Trafienia:"
         f" {hits_c3_22}/{sz_3_22}):*"
+        if show_ticks_coupon_22
+        else f"*Zakład na {sz_3_22} liczb (Mieszane):*"
     )
     st.markdown(label_3_22)
     st.code(

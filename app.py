@@ -17,7 +17,6 @@ def load_data():
   df_live = None
   try:
     session = requests.Session()
-    # Zwiększamy pobieranie do 1000 losowań, aby API Lotto na pewno zwróciło zaległe wieczorne losowania
     api_url = (
         "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=1000"
     )
@@ -53,9 +52,12 @@ def load_data():
         hour_val = int(time_str.split(":")[0]) if ":" in time_str else 14
         time_str = "14:00" if hour_val < 18 else "22:00"
 
+        # Bezpieczne pobieranie wyników z różnych możliwych kluczy API
         nums = item.get("results", [])
-        if not nums and "resultsJson" in item:
-          nums = item["resultsJson"]
+        if not nums:
+          nums = item.get("resultsJson", [])
+        if not nums:
+          nums = item.get("drawResults", [])
 
         if nums:
           row = [draw_id, formatted_date, time_str] + list(nums)
@@ -762,7 +764,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(val) and str(v).strip()
+        if pd.notna(val) and str(val).strip()
     ]
     display_data.append({
         "ID": row["ID"],

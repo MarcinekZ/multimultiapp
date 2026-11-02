@@ -241,7 +241,7 @@ if df is not None and not df.empty:
   df_14_all = df[df["Godzina"] == "14:00"]
   df_22_all = df[df["Godzina"] == "22:00"]
 
-  # Ostatnie losowanie 14:00 w bazie wraz z jego datą
+  # Ostatnie losowanie 14:00 w bazie
   latest_nums_14 = set()
   last_date_14 = ""
   if not df_14_all.empty:
@@ -255,7 +255,7 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Ostatnie losowanie 22:00 w bazie wraz z jego datą
+  # Ostatnie losowanie 22:00 w bazie
   latest_nums_22 = set()
   last_date_22 = ""
   if not df_22_all.empty:
@@ -269,21 +269,19 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  today_str = datetime.datetime.now().strftime("%d.%m.%Y")
-
-  # Ptaszki dla 14:00 pokazujemy TYLKO wtedy, gdy ostatnie losowanie 14:00 jest z dzisiaj ORAZ w bazie nie ma nowszego losowania o 22:00 z dzisiaj
-  latest_overall = df.iloc[-1]
-  is_latest_22_today = (str(latest_overall["Godzina"]) == "22:00" and str(latest_overall["Data"]).strip() == today_str)
-
+  # Uproszczone flagi weryfikacji: pokazuj ptaszki zawsze, gdy w bazie jest ostatnie losowanie danej sesji
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # Jeśli o 22:00 odbyło się dzisiejsze losowanie, to sesja 14:00 jest już historyczna na dziś i nie weryfikujemy jej na żywo ptaszkami w zestawach
+  # Sprawdzamy czy ostatni wpis w ogóle to 22:00 (wtedy 22:00 jest świeżo zakończona)
+  latest_overall = df.iloc[-1]
+  is_latest_22 = (str(latest_overall["Godzina"]) == "22:00")
+
   show_ticks_coupon_14 = (
-      True if last_date_14 == today_str and latest_nums_14 and not is_latest_22_today else False
+      True if latest_nums_14 and not is_latest_22 else False
   )
   show_ticks_coupon_22 = (
-      True if last_date_22 == today_str and latest_nums_22 else False
+      True if latest_nums_22 else False
   )
 
 

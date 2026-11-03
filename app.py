@@ -332,9 +332,9 @@ if df is not None and not df.empty:
     return even_sorted, odd_sorted
 
 
-  # Top 15 skoczków czysto poglądowo
+  # Top 5 skoczków czysto poglądowo
   @st.cache_data
-  def get_session_top_jumpers(current_zakres, session_time, top_n=15):
+  def get_session_top_jumpers(current_zakres, session_time, top_n=5):
     sub = df.tail(int(current_zakres))
     sub = sub[sub["Godzina"] == session_time].reset_index(drop=True)
     if len(sub) < 2:
@@ -352,11 +352,10 @@ if df is not None and not df.empty:
   even_14, odd_14 = get_session_top15(zakres, "14:00")
   even_22, odd_22 = get_session_top15(zakres, "22:00")
 
-  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 15)
-  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 15)
+  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
+  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
 
-  # Generowanie 3 niezależnych zestawów opartych wyłącznie na frekwencji (bez wpływu skoczków)
   def get_distinct_coupons(session_time, limit, current_zakres):
     df_session = df.tail(int(current_zakres))
     df_session = df_session[df_session["Godzina"] == session_time]
@@ -375,7 +374,6 @@ if df is not None and not df.empty:
     counts = pd.Series(all_session_nums).value_counts()
     top_freq = sorted(counts.index.tolist(), key=lambda x: counts[x], reverse=True)
 
-    # Zestaw 1: Główny Top frekwencji
     set1 = []
     for n in top_freq:
       if len(set1) >= limit:
@@ -383,7 +381,6 @@ if df is not None and not df.empty:
       if n not in set1:
         set1.append(n)
 
-    # Zestaw 2: Przesunięta pula frekwencji (od 4 elementu)
     set2 = []
     pool2 = top_freq[4:] + top_freq[:4]
     for n in pool2:
@@ -392,7 +389,6 @@ if df is not None and not df.empty:
       if n not in set2:
         set2.append(n)
 
-    # Zestaw 3: Alternatywna pula frekwencji (od 8 elementu)
     set3 = []
     pool3 = top_freq[8:] + top_freq[:8]
     for n in pool3:
@@ -463,10 +459,10 @@ if df is not None and not df.empty:
       else 0
   )
   st.markdown(
-      f"**🔥 Top 15 Przeskoków (Sesja 14:00 ➡️ 14:00) [Tylko wgląd]:**"
-      f" *(Trafienia: {hits_j14}/15)*:"
+      f"**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00) [Tylko wgląd]:**"
+      f" *(Trafienia: {hits_j14}/5)*:"
       if show_ticks_top15_14
-      else "**🔥 Top 15 Przeskoków (Sesja 14:00 ➡️ 14:00) [Tylko wgląd]:**"
+      else "**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00) [Tylko wgląd]:**"
   )
   st.code(
       format_top15_list(jumpers_14, latest_nums_14, show_ticks_top15_14)
@@ -591,10 +587,10 @@ if df is not None and not df.empty:
       else 0
   )
   st.markdown(
-      f"**🔥 Top 15 Przeskoków (Sesja 22:00 ➡️ 22:00) [Tylko wgląd]:**"
-      f" *(Trafienia: {hits_j22}/15)*:"
+      f"**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00) [Tylko wgląd]:**"
+      f" *(Trafienia: {hits_j22}/5)*:"
       if show_ticks_top15_22
-      else "**🔥 Top 15 Przeskoków (Sesja 22:00 ➡️ 22:00) [Tylko wgląd]:**"
+      else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00) [Tylko wgląd]:**"
   )
   st.code(
       format_top15_list(jumpers_22, latest_nums_22, show_ticks_top15_22)
@@ -672,7 +668,38 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. ANALIZA PAR I TRÓJEK ---
+  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) ---
+  st.subheader("🔄 Analiza Porównawcza: Wspólni Skoczki (14:00 vs 22:00)")
+  st.caption(
+      "Porównanie Top 5 skoczków z sesji popołudniowej oraz wieczornej w"
+      " wybranym zakresie bazy."
+  )
+
+  set_j14 = set(jumpers_14)
+  set_j22 = set(jumpers_22)
+  common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
+  overlap_pct = (len(common_jumpers) / 5.0) * 100
+
+  col_comp1, col_comp2 = st.columns(2)
+  with col_comp1:
+    st.markdown(f"**Wspólne liczby w Top 5 Skoczków:**")
+    common_display = (
+        " ".join([f"{n}" for n in common_jumpers])
+        if common_jumpers
+        else "Brak wspólnych liczb w Top 5"
+    )
+    st.code(common_display, language=None)
+  with col_comp2:
+    st.markdown(f"**Stopień zbieżności (Overlap):**")
+    st.metric(
+        label="Wspólne / Zbieżność",
+        value=f"{len(common_jumpers)} / 5 liczb",
+        delta=f"{overlap_pct:.1f}% zbieżności",
+    )
+
+  st.divider()
+
+  # --- 6. ANALIZA PAR I TRÓJEK ---
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
   selected_session_for_tuples = st.selectbox(
       "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
@@ -725,7 +752,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 6. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
+  # --- 7. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   display_data = []
   df_reversed = df.iloc[::-1]

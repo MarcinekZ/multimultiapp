@@ -675,57 +675,68 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) - GWARANCJA WSPÓLNYCH + WSKAZANIE LOSOWANIA ---
+  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) - ROZDZIELONE LINIE SESJI ---
   st.subheader("🔄 Analiza Porównawcza: Wspólni Skoczki (14:00 vs 22:00)")
   
-  # Ustalamy informację o ostatnim sprawdzkim losowaniu
-  active_check_label = f"Losowanie #{last_id_14} ({last_date_14} 14:00)" if latest_hour == "14:00" else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
+  active_check_label = (
+      f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
+      if latest_hour == "14:00"
+      else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
+  )
   st.caption(
-      f"Top 5 faktycznych **wspólnych** skoczków (lub połączonych liderów) zweryfikowanych względem: **{active_check_label}**."
+      f"Zestawienie skoczków rozdzielone na sesje oraz wspólne liczby"
+      f" zweryfikowane względem: **{active_check_label}**."
   )
 
   set_j14 = set(jumpers_14)
   set_j22 = set(jumpers_22)
-  
   common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
-  
-  # Budujemy stabilną listę 5 skoczków: najpierw wspólne, a jeśli jest mniej niż 5, uzupełniamy z unii obu zestawów
-  union_jumpers = sorted(list(set_j14.union(set_j22)), key=lambda x: int(x))
-  display_jumpers = common_jumpers.copy()
-  for n in union_jumpers:
-    if len(display_jumpers) < 5 and n not in display_jumpers:
-      display_jumpers.append(n)
-  if len(display_jumpers) < 5:
-    for i in range(1, 81):
-      s_n = f"{i:02d}"
-      if len(display_jumpers) < 5 and s_n not in display_jumpers:
-        display_jumpers.append(s_n)
-  display_jumpers = sorted(display_jumpers[:5], key=lambda x: int(x))
-
   overlap_pct = (len(common_jumpers) / 5.0) * 100
 
   col_comp1, col_comp2 = st.columns(2)
   with col_comp1:
-    st.markdown(f"**Top 5 Wspólnych Skoczków (weryfikacja na {active_check_label}):**")
-    
-    formatted_jumpers_tags = []
-    for n in display_jumpers:
-      tags = []
-      # Sprawdzamy trafienia na podstawie aktualnie aktywnego losowania w bazie
-      is_hit_14 = show_ticks_top15_14 and n in latest_nums_14
-      is_hit_22 = show_ticks_top15_22 and n in latest_nums_22
-      
-      t14_str = "☀️14:00" + ("✅" if is_hit_14 else "") if n in set_j14 else ""
-      t22_str = "🌙22:00" + ("✅" if is_hit_22 else "") if n in set_j22 else ""
-      
-      sub_tags = [t for t in [t14_str, t22_str] if t]
-      tag_str = " | ".join(sub_tags) if sub_tags else "wspólny"
-      formatted_jumpers_tags.append(f"• **{n}** [{tag_str}]")
-      
-    st.markdown("\n".join(formatted_jumpers_tags))
+    st.markdown("**📌 Zestawienie w podziale na sesje:**")
+
+    # Linia 14:00
+    line_14_items = []
+    for n in jumpers_14:
+      hit_14 = (
+          "✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
+      )
+      line_14_items.append(f"{n}{hit_14}")
+    st.markdown(
+        f"☀️ **Godzina 14:00:** "
+        f"{'  '.join(line_14_items) if line_14_items else 'Brak danych'}"
+    )
+
+    # Linia 22:00
+    line_22_items = []
+    for n in jumpers_22:
+      hit_22 = (
+          "✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
+      )
+      line_22_items.append(f"{n}{hit_22}")
+    st.markdown(
+        f"🌙 **Godzina 22:00:** "
+        f"{'  '.join(line_22_items) if line_22_items else 'Brak danych'}"
+    )
+
+    # Wspólni skoczki w osobnej linii
+    common_items = []
+    for n in common_jumpers:
+      hit_c = (
+          "✅"
+          if ((show_ticks_top15_14 and n in latest_nums_14) or (show_ticks_top15_22 and n in latest_nums_22))
+          else ""
+      )
+      common_items.append(f"{n}{hit_c}")
+    st.markdown(
+        f"🔄 **Wspólni Skoczki:** "
+        f"{'  '.join(common_items) if common_items else 'Brak wspólnych w Top 5'}"
+    )
 
   with col_comp2:
-    st.markdown(f"**Stopień zbieżności (Overlap):**")
+    st.markdown("**Stopień zbieżności (Overlap):**")
     st.metric(
         label="Wspólne w Top 5",
         value=f"{len(common_jumpers)} / 5 liczb",

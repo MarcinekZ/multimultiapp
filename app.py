@@ -675,7 +675,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 10 WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) W JEDNEJ LINIJCE ---
+  # --- 5. TOP 10 WSPÓLNYCH SKOCZKÓW (14:00 & 22:00) W JEDNEJ LINIJCE ---
   st.subheader("🔥 Top 10 Wspólnych Skoczków (14:00 & 22:00)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
@@ -683,32 +683,40 @@ if df is not None and not df.empty:
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Liczby będące jednocześnie w Top skoczkach sesji 14:00 i 22:00,"
+      f"Najsilniejsze połączone liczby ze skoczków sesji 14:00 i 22:00,"
       f" zweryfikowane względem: **{active_check_label}**."
   )
 
-  # Pobieramy szerszą pulę (np. Top 20 z obu sesji) i wyciągamy Top 10 części wspólnej
-  j14_pool = set(get_session_top_jumpers(zakres, "14:00", 20))
-  j22_pool = set(get_session_top_jumpers(zakres, "22:00", 20))
-  common_10 = sorted(list(j14_pool.intersection(j22_pool)), key=lambda x: int(x))[
-      :10
-  ]
-  if not common_10:
-    # Fallback jeśli zbiory się nie zazębiają w małym zakresie
-    common_10 = sorted(list(j14_pool.union(j22_pool)), key=lambda x: int(x))[
-        :10
-    ]
+  # Zbieramy bezpiecznie Top 10 (najpierw część wspólna, a jeśli mało, dopełnienie z unii)
+  j14_list = get_session_top_jumpers(zakres, "14:00", 15)
+  j22_list = get_session_top_jumpers(zakres, "22:00", 15)
+  
+  set_14 = set(j14_list)
+  set_22 = set(j22_list)
+  
+  common_pool = sorted(list(set_14.intersection(set_22)), key=lambda x: int(x))
+  union_pool = sorted(list(set_14.union(set_22)), key=lambda x: int(x))
+  
+  top_10_combined = common_pool.copy()
+  for n in union_pool:
+    if len(top_10_combined) < 10 and n not in top_10_combined:
+      top_10_combined.append(n)
+  if len(top_10_combined) < 10:
+    for i in range(1, 81):
+      s_n = f"{i:02d}"
+      if len(top_10_combined) < 10 and s_n not in top_10_combined:
+        top_10_combined.append(s_n)
+  
+  top_10_combined = sorted(top_10_combined[:10], key=lambda x: int(x))
 
   common_items = []
-  for n in common_10:
+  for n in top_10_combined:
     hit_14 = "☀️✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
     hit_22 = "🌙✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
     ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
     common_items.append(f"**{n}**{ticks_str}")
 
-  line_display = (
-      "   ".join(common_items) if common_items else "Brak wspólnych skoczków"
-  )
+  line_display = "   ".join(common_items)
   st.markdown(f"🎯 {line_display}")
 
   st.divider()

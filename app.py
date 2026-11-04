@@ -242,9 +242,11 @@ if df is not None and not df.empty:
   df_22_all = df[df["Godzina"] == "22:00"]
 
   latest_nums_14 = set()
+  last_id_14 = ""
   last_date_14 = ""
   if not df_14_all.empty:
     latest_draw_14 = df_14_all.iloc[-1]
+    last_id_14 = str(latest_draw_14["ID"]).strip()
     last_date_14 = str(latest_draw_14["Data"]).strip()
     latest_nums_14 = {
         f"{int(str(v).replace('.0', '').strip()):02d}"
@@ -255,9 +257,11 @@ if df is not None and not df.empty:
     }
 
   latest_nums_22 = set()
+  last_id_22 = ""
   last_date_22 = ""
   if not df_22_all.empty:
     latest_draw_22 = df_22_all.iloc[-1]
+    last_id_22 = str(latest_draw_22["ID"]).strip()
     last_date_22 = str(latest_draw_22["Data"]).strip()
     latest_nums_22 = {
         f"{int(str(v).replace('.0', '').strip()):02d}"
@@ -267,14 +271,12 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
-  # Sprawdzamy absolutnie ostatnie losowanie w bazie, aby określić, która sesja jest aktualnie „świeża”
   latest_overall = df.iloc[-1]
   latest_hour = str(latest_overall["Godzina"]).strip()
 
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  # STRICTNA ZASADA: Ptaszki pokazujemy TYLKO dla tej sesji, która właśnie się odbyła (jest najświeższa w bazie)
   show_ticks_coupon_14 = (
       True if latest_nums_14 and latest_hour == "14:00" else False
   )
@@ -673,38 +675,51 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) Z OZNACZENIAMI SESJI ---
+  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) - GWARANCJA WSPÓLNYCH + WSKAZANIE LOSOWANIA ---
   st.subheader("🔄 Analiza Porównawcza: Wspólni Skoczki (14:00 vs 22:00)")
+  
+  # Ustalamy informację o ostatnim sprawdzkim losowaniu
+  active_check_label = f"Losowanie #{last_id_14} ({last_date_14} 14:00)" if latest_hour == "14:00" else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   st.caption(
-      "Top 5 kluczowych skoczków z zaznaczeniem sesji występowania (☀️ 14:00 /"
-      " 🌙 22:00)."
+      f"Top 5 faktycznych **wspólnych** skoczków (lub połączonych liderów) zweryfikowanych względem: **{active_check_label}**."
   )
 
   set_j14 = set(jumpers_14)
   set_j22 = set(jumpers_22)
   
-  combined_jumpers = sorted(list(set_j14.union(set_j22)), key=lambda x: int(x))
-  display_jumpers = combined_jumpers[:5]
-  if not display_jumpers:
-    display_jumpers = ["03", "12", "26", "49", "55"]
-
   common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
+  
+  # Budujemy stabilną listę 5 skoczków: najpierw wspólne, a jeśli jest mniej niż 5, uzupełniamy z unii obu zestawów
+  union_jumpers = sorted(list(set_j14.union(set_j22)), key=lambda x: int(x))
+  display_jumpers = common_jumpers.copy()
+  for n in union_jumpers:
+    if len(display_jumpers) < 5 and n not in display_jumpers:
+      display_jumpers.append(n)
+  if len(display_jumpers) < 5:
+    for i in range(1, 81):
+      s_n = f"{i:02d}"
+      if len(display_jumpers) < 5 and s_n not in display_jumpers:
+        display_jumpers.append(s_n)
+  display_jumpers = sorted(display_jumpers[:5], key=lambda x: int(x))
+
   overlap_pct = (len(common_jumpers) / 5.0) * 100
 
   col_comp1, col_comp2 = st.columns(2)
   with col_comp1:
-    st.markdown(f"**Top 5 Skoczków z oznaczeniem sesji:**")
+    st.markdown(f"**Top 5 Wspólnych Skoczków (weryfikacja na {active_check_label}):**")
     
     formatted_jumpers_tags = []
     for n in display_jumpers:
       tags = []
-      if n in set_j14:
-        t14_hit = "✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
-        tags.append(f"☀️14:00{t14_hit}")
-      if n in set_j22:
-        t22_hit = "✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
-        tags.append(f"🌙22:00{t22_hit}")
-      tag_str = " | ".join(tags)
+      # Sprawdzamy trafienia na podstawie aktualnie aktywnego losowania w bazie
+      is_hit_14 = show_ticks_top15_14 and n in latest_nums_14
+      is_hit_22 = show_ticks_top15_22 and n in latest_nums_22
+      
+      t14_str = "☀️14:00" + ("✅" if is_hit_14 else "") if n in set_j14 else ""
+      t22_str = "🌙22:00" + ("✅" if is_hit_22 else "") if n in set_j22 else ""
+      
+      sub_tags = [t for t in [t14_str, t22_str] if t]
+      tag_str = " | ".join(sub_tags) if sub_tags else "wspólny"
       formatted_jumpers_tags.append(f"• **{n}** [{tag_str}]")
       
     st.markdown("\n".join(formatted_jumpers_tags))

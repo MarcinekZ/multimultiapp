@@ -341,7 +341,7 @@ if df is not None and not df.empty:
 
 
   @st.cache_data
-  def get_session_top_jumpers(current_zakres, session_time, top_n=10):
+  def get_session_top_jumpers(current_zakres, session_time, top_n=5):
     sub = df.tail(int(current_zakres))
     sub = sub[sub["Godzina"] == session_time].reset_index(drop=True)
     if len(sub) < 2:
@@ -356,41 +356,11 @@ if df is not None and not df.empty:
     return sorted(top_j, key=lambda x: int(x))
 
 
-  @st.cache_data
-  def get_cross_session_jumpers(current_zakres, h_from, h_to, top_n=10):
-    sub = df.tail(int(current_zakres)).sort_values(
-        "ID_int" if "ID_int" in df.columns else "ID"
-    )
-    counter = Counter()
-    rows = sub.to_dict("records")
-    for i in range(len(rows) - 1):
-      r1 = rows[i]
-      r2 = rows[i + 1]
-      if str(r1.get("Godzina")) == h_from and str(r2.get("Godzina")) == h_to:
-        nums1 = {
-            int(str(v).replace(".0", "").strip())
-            for k, v in r1.items()
-            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-        }
-        nums2 = {
-            int(str(v).replace(".0", "").strip())
-            for k, v in r2.items()
-            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-        }
-        for n in nums1.intersection(nums2):
-          counter[n] += 1
-    top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
-    return sorted(top_j, key=lambda x: int(x))
-
-
   even_14, odd_14 = get_session_top15(zakres, "14:00")
   even_22, odd_22 = get_session_top15(zakres, "22:00")
 
-  # Top 10 skoczków dla poszczególnych wariantów
-  jumpers_14_14 = get_session_top_jumpers(zakres, "14:00", 10)  # 14:14
-  jumpers_22_22 = get_session_top_jumpers(zakres, "22:00", 10)  # 22:22
-  jumpers_14_22 = get_cross_session_jumpers(zakres, "14:00", "22:00", 10)  # 14:22
-  jumpers_22_14 = get_cross_session_jumpers(zakres, "22:00", "14:00", 10)  # 22:14
+  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
+  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
 
   def get_distinct_coupons(session_time, limit, current_zakres):
@@ -486,6 +456,24 @@ if df is not None and not df.empty:
   st.code(
       format_top15_list(odd_14, latest_nums_14, show_ticks_top15_14)
       if odd_14
+      else "Brak danych",
+      language=None,
+  )
+
+  hits_j14 = (
+      sum(1 for n in jumpers_14 if n in latest_nums_14)
+      if show_ticks_top15_14
+      else 0
+  )
+  st.markdown(
+      f"**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia:"
+      f" {hits_j14}/5)*:"
+      if show_ticks_top15_14
+      else "**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
+  )
+  st.code(
+      format_top15_list(jumpers_14, latest_nums_14, show_ticks_top15_14)
+      if jumpers_14
       else "Brak danych",
       language=None,
   )
@@ -600,6 +588,24 @@ if df is not None and not df.empty:
       language=None,
   )
 
+  hits_j22 = (
+      sum(1 for n in jumpers_22 if n in latest_nums_22)
+      if show_ticks_top15_22
+      else 0
+  )
+  st.markdown(
+      f"**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia:"
+      f" {hits_j22}/5)*:"
+      if show_ticks_top15_22
+      else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
+  )
+  st.code(
+      format_top15_list(jumpers_22, latest_nums_22, show_ticks_top15_22)
+      if jumpers_22
+      else "Brak danych",
+      language=None,
+  )
+
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 22:00):**")
 
   col_22_s1, col_22_c1 = st.columns([1, 3])
@@ -669,43 +675,41 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 10 WSPÓLNYCH SKOCZKÓW (14:14, 22:22, 14:22, 22:14) ---
-  st.subheader("🔥 Top 10 Wspólnych Skoczków (Warianty Czasowe)")
+  # --- 5. TOP 10 WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) W JEDNEJ LINIJCE ---
+  st.subheader("🔥 Top 10 Wspólnych Skoczków (14:00 & 22:00)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
       if latest_hour == "14:00"
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Zestawienie Top 10 skoczków dla kluczowych relacji godzinowych,"
+      f"Liczby będące jednocześnie w Top skoczkach sesji 14:00 i 22:00,"
       f" zweryfikowane względem: **{active_check_label}**."
   )
 
-  def format_jumpers_line(j_list, target_nums, show_t):
-    if not j_list:
-      return "Brak danych"
-    res = []
-    for n in j_list:
-      tick = "✅" if (show_t and n in target_nums) else ""
-      res.append(f"**{n}**{tick}")
-    return "   ".join(res)
+  # Pobieramy szerszą pulę (np. Top 20 z obu sesji) i wyciągamy Top 10 części wspólnej
+  j14_pool = set(get_session_top_jumpers(zakres, "14:00", 20))
+  j22_pool = set(get_session_top_jumpers(zakres, "22:00", 20))
+  common_10 = sorted(list(j14_pool.intersection(j22_pool)), key=lambda x: int(x))[
+      :10
+  ]
+  if not common_10:
+    # Fallback jeśli zbiory się nie zazębiają w małym zakresie
+    common_10 = sorted(list(j14_pool.union(j22_pool)), key=lambda x: int(x))[
+        :10
+    ]
 
-  st.markdown(
-      f"☀️➡️☀️ **Godzina 14:14 (Dzień do Dnia 14:00):**  \n"
-      f"{format_jumpers_line(jumpers_14_14, latest_nums_14, show_ticks_top15_14)}"
+  common_items = []
+  for n in common_10:
+    hit_14 = "☀️✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
+    hit_22 = "🌙✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
+    ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
+    common_items.append(f"**{n}**{ticks_str}")
+
+  line_display = (
+      "   ".join(common_items) if common_items else "Brak wspólnych skoczków"
   )
-  st.markdown(
-      f"🌙➡️🌙 **Godzina 22:22 (Dzień do Dnia 22:00):**  \n"
-      f"{format_jumpers_line(jumpers_22_22, latest_nums_22, show_ticks_top15_22)}"
-  )
-  st.markdown(
-      f"☀️➡️🌙 **Godzina 14:22 (Popołudnie ➡️ Wieczór):**  \n"
-      f"{format_jumpers_line(jumpers_14_22, latest_nums_22 if latest_hour == '22:00' else latest_nums_14, show_ticks_top15_22 or show_ticks_top15_14)}"
-  )
-  st.markdown(
-      f"🌙➡️☀️ **Godzina 22:14 (Wieczór ➡️ Następny Dzień 14:00):**  \n"
-      f"{format_jumpers_line(jumpers_22_14, latest_nums_14, show_ticks_top15_14)}"
-  )
+  st.markdown(f"🎯 {line_display}")
 
   st.divider()
 

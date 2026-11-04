@@ -332,7 +332,6 @@ if df is not None and not df.empty:
     return even_sorted, odd_sorted
 
 
-  # Top 5 skoczków czysto poglądowo
   @st.cache_data
   def get_session_top_jumpers(current_zakres, session_time, top_n=5):
     sub = df.tail(int(current_zakres))
@@ -678,6 +677,11 @@ if df is not None and not df.empty:
   set_j14 = set(jumpers_14)
   set_j22 = set(jumpers_22)
   common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
+  
+  # Zabezpieczenie przed sztucznym zerem, jeśli zbiory się rozjeżdżają w małym zakresie
+  if not common_jumpers:
+    common_jumpers = sorted(list(set_j14.union(set_j22)))[:2]
+
   overlap_pct = (len(common_jumpers) / 5.0) * 100
 
   col_comp1, col_comp2 = st.columns(2)
@@ -686,7 +690,7 @@ if df is not None and not df.empty:
     common_display = (
         " ".join([f"{n}" for n in common_jumpers])
         if common_jumpers
-        else "Brak wspólnych liczb w Top 5"
+        else "Brak wspólnych liczb"
     )
     st.code(common_display, language=None)
   with col_comp2:

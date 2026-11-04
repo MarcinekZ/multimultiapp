@@ -675,8 +675,8 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) - ROZDZIELONE LINIE SESJI ---
-  st.subheader("🔄 Analiza Porównawcza: Wspólni Skoczki (14:00 vs 22:00)")
+  # --- 5. WSPÓLNI SKOCZKOWIE (14:00 vs 22:00) W JEDNEJ LINIJCE ---
+  st.subheader("🔄 Wspólni Skoczki (14:00 oraz 22:00)")
   
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
@@ -684,7 +684,7 @@ if df is not None and not df.empty:
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Zestawienie skoczków rozdzielone na sesje oraz wspólne liczby"
+      f"Liczby będące jednocześnie w Top 5 skoczków o 14:00 i 22:00,"
       f" zweryfikowane względem: **{active_check_label}**."
   )
 
@@ -695,48 +695,22 @@ if df is not None and not df.empty:
 
   col_comp1, col_comp2 = st.columns(2)
   with col_comp1:
-    st.markdown("**📌 Zestawienie w podziale na sesje:**")
+    st.markdown("**Wspólni skoczki w jednej linijce:**")
 
-    # Linia 14:00
-    line_14_items = []
-    for n in jumpers_14:
-      hit_14 = (
-          "✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
-      )
-      line_14_items.append(f"{n}{hit_14}")
-    st.markdown(
-        f"☀️ **Godzina 14:00:** "
-        f"{'  '.join(line_14_items) if line_14_items else 'Brak danych'}"
-    )
-
-    # Linia 22:00
-    line_22_items = []
-    for n in jumpers_22:
-      hit_22 = (
-          "✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
-      )
-      line_22_items.append(f"{n}{hit_22}")
-    st.markdown(
-        f"🌙 **Godzina 22:00:** "
-        f"{'  '.join(line_22_items) if line_22_items else 'Brak danych'}"
-    )
-
-    # Wspólni skoczki w osobnej linii
     common_items = []
     for n in common_jumpers:
-      hit_c = (
-          "✅"
-          if ((show_ticks_top15_14 and n in latest_nums_14) or (show_ticks_top15_22 and n in latest_nums_22))
-          else ""
-      )
-      common_items.append(f"{n}{hit_c}")
-    st.markdown(
-        f"🔄 **Wspólni Skoczki:** "
-        f"{'  '.join(common_items) if common_items else 'Brak wspólnych w Top 5'}"
-    )
+      # Ptaszki dla 14:00 i 22:00, jeśli ta liczba trafiła w danej sesji
+      hit_14 = "☀️✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
+      hit_22 = "🌙✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
+      
+      ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
+      common_items.append(f"**{n}**{ticks_str}")
+
+    line_display = "   ".join(common_items) if common_items else "Brak wspólnych skoczków w Top 5"
+    st.markdown(f"🎯 {line_display}")
 
   with col_comp2:
-    st.markdown("**Stopień zbieżności (Overlap):**")
+    st.markdown("**Stopień zbieżności:**")
     st.metric(
         label="Wspólne w Top 5",
         value=f"{len(common_jumpers)} / 5 liczb",

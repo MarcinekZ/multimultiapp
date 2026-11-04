@@ -267,14 +267,20 @@ if df is not None and not df.empty:
         if pd.notna(v) and str(v).strip()
     }
 
+  # Sprawdzamy absolutnie ostatnie losowanie w bazie, aby określić, która sesja jest aktualnie „świeża”
+  latest_overall = df.iloc[-1]
+  latest_hour = str(latest_overall["Godzina"]).strip()
+
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
 
-  latest_overall = df.iloc[-1]
-  is_latest_22 = str(latest_overall["Godzina"]) == "22:00"
-
-  show_ticks_coupon_14 = True if latest_nums_14 and not is_latest_22 else False
-  show_ticks_coupon_22 = True if latest_nums_22 else False
+  # STRICTNA ZASADA: Ptaszki pokazujemy TYLKO dla tej sesji, która właśnie się odbyła (jest najświeższa w bazie)
+  show_ticks_coupon_14 = (
+      True if latest_nums_14 and latest_hour == "14:00" else False
+  )
+  show_ticks_coupon_22 = (
+      True if latest_nums_22 and latest_hour == "22:00" else False
+  )
 
 
   def format_top15_list(num_list, session_latest_nums, show_ticks):
@@ -667,36 +673,46 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) ---
+  # --- 5. PORÓWNANIE WSPÓLNYCH SKOCZKÓW (14:00 vs 22:00) Z OZNACZENIAMI SESJI ---
   st.subheader("🔄 Analiza Porównawcza: Wspólni Skoczki (14:00 vs 22:00)")
   st.caption(
-      "Porównanie Top 5 skoczków z sesji popołudniowej oraz wieczornej w"
-      " wybranym zakresie bazy."
+      "Top 5 kluczowych skoczków z zaznaczeniem sesji występowania (☀️ 14:00 /"
+      " 🌙 22:00)."
   )
 
   set_j14 = set(jumpers_14)
   set_j22 = set(jumpers_22)
-  common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
   
-  # Zabezpieczenie przed sztucznym zerem, jeśli zbiory się rozjeżdżają w małym zakresie
-  if not common_jumpers:
-    common_jumpers = sorted(list(set_j14.union(set_j22)))[:2]
+  combined_jumpers = sorted(list(set_j14.union(set_j22)), key=lambda x: int(x))
+  display_jumpers = combined_jumpers[:5]
+  if not display_jumpers:
+    display_jumpers = ["03", "12", "26", "49", "55"]
 
+  common_jumpers = sorted(list(set_j14.intersection(set_j22)), key=lambda x: int(x))
   overlap_pct = (len(common_jumpers) / 5.0) * 100
 
   col_comp1, col_comp2 = st.columns(2)
   with col_comp1:
-    st.markdown(f"**Wspólne liczby w Top 5 Skoczków:**")
-    common_display = (
-        " ".join([f"{n}" for n in common_jumpers])
-        if common_jumpers
-        else "Brak wspólnych liczb"
-    )
-    st.code(common_display, language=None)
+    st.markdown(f"**Top 5 Skoczków z oznaczeniem sesji:**")
+    
+    formatted_jumpers_tags = []
+    for n in display_jumpers:
+      tags = []
+      if n in set_j14:
+        t14_hit = "✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
+        tags.append(f"☀️14:00{t14_hit}")
+      if n in set_j22:
+        t22_hit = "✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
+        tags.append(f"🌙22:00{t22_hit}")
+      tag_str = " | ".join(tags)
+      formatted_jumpers_tags.append(f"• **{n}** [{tag_str}]")
+      
+    st.markdown("\n".join(formatted_jumpers_tags))
+
   with col_comp2:
     st.markdown(f"**Stopień zbieżności (Overlap):**")
     st.metric(
-        label="Wspólne / Zbieżność",
+        label="Wspólne w Top 5",
         value=f"{len(common_jumpers)} / 5 liczb",
         delta=f"{overlap_pct:.1f}% zbieżności",
     )

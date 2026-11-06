@@ -409,6 +409,7 @@ if df is not None and not df.empty:
       if len(set1) < limit and s_num not in set1:
         set1.append(s_num)
       if len(set2) < limit and s_num not in set2:
+        set2.append(set2.append(s_num) if hasattr(set2, 'append') else None) # safe
         set2.append(s_num)
       if len(set3) < limit and s_num not in set3:
         set3.append(s_num)
@@ -418,6 +419,25 @@ if df is not None and not df.empty:
         sorted(set2[:limit], key=lambda x: int(x)),
         sorted(set3[:limit], key=lambda x: int(x)),
     )
+
+  # --- MECHANIZM ZAMRAŻANIA / BLOKOWANIA ZESTAWÓW (SESSION STATE) ---
+  if "locked_14" not in st.session_state:
+    st.session_state["locked_14"] = False
+  if "frozen_c14_1" not in st.session_state:
+    st.session_state["frozen_c14_1"] = []
+  if "frozen_c14_2" not in st.session_state:
+    st.session_state["frozen_c14_2"] = []
+  if "frozen_c14_3" not in st.session_state:
+    st.session_state["frozen_c14_3"] = []
+
+  if "locked_22" not in st.session_state:
+    st.session_state["locked_22"] = False
+  if "frozen_c22_1" not in st.session_state:
+    st.session_state["frozen_c22_1"] = []
+  if "frozen_c22_2" not in st.session_state:
+    st.session_state["frozen_c22_2"] = []
+  if "frozen_c22_3" not in st.session_state:
+    st.session_state["frozen_c22_3"] = []
 
 
   # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
@@ -492,12 +512,30 @@ if df is not None and not df.empty:
   with col_14_s3:
     sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_14_3")
 
-  c_14_1, c_14_2, c_14_3 = get_distinct_coupons(
+  # Generowanie lub pobieranie zamrożonych zestawów 14:00
+  raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
       "14:00", max(sz_14_1, sz_14_2, sz_14_3), zakres
   )
-  c_14_1 = c_14_1[:sz_14_1]
-  c_14_2 = c_14_2[:sz_14_2]
-  c_14_3 = c_14_3[:sz_14_3]
+  
+  if not st.session_state["locked_14"]:
+    st.session_state["frozen_c14_1"] = raw_c14_1[:sz_14_1]
+    st.session_state["frozen_c14_2"] = raw_c14_2[:sz_14_2]
+    st.session_state["frozen_c14_3"] = raw_c14_3[:sz_14_3]
+  
+  c_14_1 = st.session_state["frozen_c14_1"][:sz_14_1]
+  c_14_2 = st.session_state["frozen_c14_2"][:sz_14_2]
+  c_14_3 = st.session_state["frozen_c14_3"][:sz_14_3]
+
+  col_lock14, _ = st.columns([2, 4])
+  with col_lock14:
+    if not st.session_state["locked_14"]:
+      if st.button("🔒 Zamroź zestawy 14:00", key="btn_lock_14", use_container_width=True):
+        st.session_state["locked_14"] = True
+        st.rerun()
+    else:
+      if st.button("🔓 Odblokuj / Zmień zestawy 14:00", key="btn_unlock_14", use_container_width=True):
+        st.session_state["locked_14"] = False
+        st.rerun()
 
   hits_c14_1 = (
       sum(1 for n in c_14_1 if n in latest_nums_14)
@@ -517,8 +555,9 @@ if df is not None and not df.empty:
 
   with col_14_c1:
     st.markdown(
-        f"**Zestaw 1 (Główny Top)** ({sz_14_1} liczb)"
-        f" {f'*(Trafienia: {hits_c14_1}/{sz_14_1})*' if show_ticks_coupon_14 else ''}"
+        f"**Zestaw 1 (Główny Top)** ({len(c_14_1)} liczb)"
+        f" {f'*(Trafienia: {hits_c14_1}/{len(c_14_1)})*' if show_ticks_coupon_14 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}"
     )
     st.code(
         format_coupon_list(c_14_1, latest_nums_14, show_ticks_coupon_14),
@@ -527,8 +566,8 @@ if df is not None and not df.empty:
 
   with col_14_c2:
     st.markdown(
-        f"**Zestaw 2 (Przesunięty Top)** ({sz_14_2} liczb)"
-        f" {f'*(Trafienia: {hits_c14_2}/{sz_14_2})*' if show_ticks_coupon_14 else ''}"
+        f"**Zestaw 2 (Przesunięty Top)** ({len(c_14_2)} liczb)"
+        f" {f'*(Trafienia: {hits_c14_2}/{len(c_14_2)})*' if show_ticks_coupon_14 else ''}"
     )
     st.code(
         format_coupon_list(c_14_2, latest_nums_14, show_ticks_coupon_14),
@@ -537,8 +576,8 @@ if df is not None and not df.empty:
 
   with col_14_c3:
     st.markdown(
-        f"**Zestaw 3 (Strategia Alternatywna)** ({sz_14_3} liczb)"
-        f" {f'*(Trafienia: {hits_c14_3}/{sz_14_3})*' if show_ticks_coupon_14 else ''}"
+        f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_14_3)} liczb)"
+        f" {f'*(Trafienia: {hits_c14_3}/{len(c_14_3)})*' if show_ticks_coupon_14 else ''}"
     )
     st.code(
         format_coupon_list(c_14_3, latest_nums_14, show_ticks_coupon_14),
@@ -620,12 +659,30 @@ if df is not None and not df.empty:
   with col_22_s3:
     sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_22_3")
 
-  c_22_1, c_22_2, c_22_3 = get_distinct_coupons(
+  # Generowanie lub pobieranie zamrożonych zestawów 22:00
+  raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
       "22:00", max(sz_22_1, sz_22_2, sz_22_3), zakres
   )
-  c_22_1 = c_22_1[:sz_22_1]
-  c_22_2 = c_22_2[:sz_22_2]
-  c_22_3 = c_22_3[:sz_22_3]
+  
+  if not st.session_state["locked_22"]:
+    st.session_state["frozen_c22_1"] = raw_c22_1[:sz_22_1]
+    st.session_state["frozen_c22_2"] = raw_c22_2[:sz_22_2]
+    st.session_state["frozen_c22_3"] = raw_c22_3[:sz_22_3]
+  
+  c_22_1 = st.session_state["frozen_c22_1"][:sz_22_1]
+  c_22_2 = st.session_state["frozen_c22_2"][:sz_22_2]
+  c_22_3 = st.session_state["frozen_c22_3"][:sz_22_3]
+
+  col_lock22, _ = st.columns([2, 4])
+  with col_lock22:
+    if not st.session_state["locked_22"]:
+      if st.button("🔒 Zamroź zestawy 22:00", key="btn_lock_22", use_container_width=True):
+        st.session_state["locked_22"] = True
+        st.rerun()
+    else:
+      if st.button("🔓 Odblokuj / Zmień zestawy 22:00", key="btn_unlock_22", use_container_width=True):
+        st.session_state["locked_22"] = False
+        st.rerun()
 
   hits_c22_1 = (
       sum(1 for n in c_22_1 if n in latest_nums_22)
@@ -645,8 +702,9 @@ if df is not None and not df.empty:
 
   with col_22_c1:
     st.markdown(
-        f"**Zestaw 1 (Główny Top)** ({sz_22_1} liczb)"
-        f" {f'*(Trafienia: {hits_c22_1}/{sz_22_1})*' if show_ticks_coupon_22 else ''}"
+        f"**Zestaw 1 (Główny Top)** ({len(c_22_1)} liczb)"
+        f" {f'*(Trafienia: {hits_c22_1}/{len(c_22_1)})*' if show_ticks_coupon_22 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}"
     )
     st.code(
         format_coupon_list(c_22_1, latest_nums_22, show_ticks_coupon_22),
@@ -655,8 +713,8 @@ if df is not None and not df.empty:
 
   with col_22_c2:
     st.markdown(
-        f"**Zestaw 2 (Przesunięty Top)** ({sz_22_2} liczb)"
-        f" {f'*(Trafienia: {hits_c22_2}/{sz_22_2})*' if show_ticks_coupon_22 else ''}"
+        f"**Zestaw 2 (Przesunięty Top)** ({len(c_22_2)} liczb)"
+        f" {f'*(Trafienia: {hits_c22_2}/{len(c_22_2)})*' if show_ticks_coupon_22 else ''}"
     )
     st.code(
         format_coupon_list(c_22_2, latest_nums_22, show_ticks_coupon_22),
@@ -665,8 +723,8 @@ if df is not None and not df.empty:
 
   with col_22_c3:
     st.markdown(
-        f"**Zestaw 3 (Strategia Alternatywna)** ({sz_22_3} liczb)"
-        f" {f'*(Trafienia: {hits_c22_3}/{sz_22_3})*' if show_ticks_coupon_22 else ''}"
+        f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_22_3)} liczb)"
+        f" {f'*(Trafienia: {hits_c22_3}/{len(c_22_3)})*' if show_ticks_coupon_22 else ''}"
     )
     st.code(
         format_coupon_list(c_22_3, latest_nums_22, show_ticks_coupon_22),
@@ -687,7 +745,6 @@ if df is not None and not df.empty:
       f" zweryfikowane względem: **{active_check_label}**."
   )
 
-  # Zbieramy bezpiecznie Top 10 (najpierw część wspólna, a jeśli mało, dopełnienie z unii)
   j14_list = get_session_top_jumpers(zakres, "14:00", 15)
   j22_list = get_session_top_jumpers(zakres, "22:00", 15)
   

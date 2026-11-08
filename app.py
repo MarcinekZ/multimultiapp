@@ -65,7 +65,6 @@ def load_data():
   # Standaryzacja kolumn: ID, Data, Godzina + dokładnie 20 liczb (L1 do L20)
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
   
-  # Jeśli DataFrame ma za mało kolumn, uzupełniamy pustymi
   while df.shape[1] < len(cols):
     df[df.shape[1]] = None
     
@@ -140,7 +139,7 @@ if df is not None and not df.empty:
   st.sidebar.success(f"🟢 Baza aktywna (Łącznie losowań: {len(df)})")
   total_draws = len(df)
 
-  # Pomocnicza funkcja do pobierania dokładnie 20 liczb z wiersza
+  # Gwarantowane pobieranie dokładnie 20 liczb (uzupełniające puste sloty, jeśli w pliku CSV brakuje kolumny)
   def get_row_numbers(row):
     nums = []
     for i in range(1, 21):
@@ -149,7 +148,10 @@ if df is not None and not df.empty:
         cleaned_v = str(val).replace(".0", "").strip()
         if cleaned_v:
           nums.append(cleaned_v)
-    return nums
+    # Jeśli wiersz z jakiegoś powodu ma mniej niż 20 liczb, dopełniamy placeholderem, aby zawsze było 20 slotów
+    while len(nums) < 20:
+      nums.append("--")
+    return nums[:20]
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -177,6 +179,9 @@ if df is not None and not df.empty:
 
     formatted_display = []
     for val_clean in curr_nums:
+      if val_clean == "--":
+        formatted_display.append("--")
+        continue
       val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
       if val_clean in repeated or (val_clean.isdigit() and str(int(val_clean)) in repeated):
         formatted_display.append(f"🔄{val_str}")
@@ -254,6 +259,7 @@ if df is not None and not df.empty:
     latest_nums_14 = {
         f"{int(v):02d}" if v.isdigit() else v
         for v in get_row_numbers(latest_draw_14)
+        if v != "--"
     }
 
   latest_nums_22 = set()
@@ -266,6 +272,7 @@ if df is not None and not df.empty:
     latest_nums_22 = {
         f"{int(v):02d}" if v.isdigit() else v
         for v in get_row_numbers(latest_draw_22)
+        if v != "--"
     }
 
   latest_overall = df.iloc[-1]
@@ -682,7 +689,7 @@ if df is not None and not df.empty:
   st.caption("Baza przejść międzysesyjnych (14:00 ⇄ 22:00) oparta na ostatnim losowaniu:")
   
   if prev_cross_list:
-    formatted_cross = [f"{int(v):02d}" if v.isdigit() else v for v in prev_cross_list]
+    formatted_cross = [f"{int(v):02d}" if v.isdigit() else v for v in prev_cross_list if v != "--"]
     p_line1 = " ".join(formatted_cross[:10])
     p_line2 = " ".join(formatted_cross[10:])
     st.code(f"Losowanie #{prev_cross_id} ({prev_cross_date} | ⏰ {prev_cross_hour}):\n{p_line1}\n{p_line2}", language=None)

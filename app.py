@@ -40,6 +40,7 @@ def load_data():
           72,
           73,
           74,
+          75,
       ]
   ]
   df_fallback = pd.DataFrame(guaranteed_rows)
@@ -61,15 +62,17 @@ def load_data():
 
   df = pd.concat(dfs, ignore_index=True)
 
+  # Zapewnienie równej struktury: ID, Data, Godzina + dokładnie 20 liczb (kolumny 0 do 22 lub więcej)
   if df.shape[1] >= 23:
     df = df.iloc[:, :23]
     cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
     df.columns = cols
   else:
-    current_cols = ["ID", "Data", "Godzina"] + [
-        f"L{i}" for i in range(1, df.shape[1] - 2)
-    ]
-    df.columns = current_cols[: df.shape[1]]
+    # Jeśli plik ma mniej kolumn, uzupełniamy brakujące do 23 kolumn (ID, Data, Godzina + 20 liczb)
+    while df.shape[1] < 23:
+      df[df.shape[1]] = None
+    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
+    df.columns = cols[: df.shape[1]]
 
   if "ID" in df.columns:
     df["ID"] = (
@@ -386,9 +389,8 @@ if df is not None and not df.empty:
       return set(), {}
 
     transition_scores = defaultdict(int)
-    mapping_sources = {} # pred_num -> source_num
+    mapping_sources = {}
     
-    # Track historical transition source mapping
     jumper_source_counter = defaultdict(Counter)
     for i in range(1, len(sub)):
       p_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
@@ -416,13 +418,10 @@ if df is not None and not df.empty:
     sorted_items = sorted(transition_scores.items(), key=lambda x: x[1], reverse=True)
     top_predicted_list = [item[0] for item in sorted_items[:top_k]]
     
-    # For each top predicted number, find which number from prev_session_nums has the strongest historical link
     for pred_str in top_predicted_list:
       p_int = int(pred_str)
       if p_int in jumper_source_counter:
-        # Find best source among prev_session_nums
         possible_sources = jumper_source_counter[p_int]
-        # Filter by what's actually present in prev_session_nums
         valid_sources = {src: cnt for src, cnt in possible_sources.items() if src in prev_session_nums}
         if valid_sources:
           best_src = max(valid_sources, key=valid_sources.get)
@@ -451,7 +450,6 @@ if df is not None and not df.empty:
   if len(df_22_sub) >= 2:
     prev_nums_22 = {int(str(v).replace(".0", "").strip()) for k, v in df_22_sub.iloc[-2].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
 
-  # Przejściowa baza międzysesyjna
   prev_cross_nums = set()
   prev_cross_list = []
   prev_cross_id = ""
@@ -550,7 +548,6 @@ if df is not None and not df.empty:
 
   # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
-  # (Standard sections...)
   even_14, odd_14 = get_session_top15(zakres, "14:00")
   even_22, odd_22 = get_session_top15(zakres, "22:00")
   jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
@@ -714,7 +711,6 @@ if df is not None and not df.empty:
 
   pred_cross, source_mapping = get_cross_session_strict_predictions_with_sources(zakres, top_15_cross, prev_cross_nums, top_k=5)
 
-  # Wyświetlenie mapowania: do jakiej liczby z poprzedniego losowania przypisana jest predykcja
   if source_mapping:
     mapping_str_parts = [f"**{pred}** ➔ z liczby **{src}**" for pred, src in sorted(source_mapping.items(), key=lambda x: int(x[0]))]
     st.markdown("📌 **Przypisanie predykcji do liczb bazowych:** " + " | ".join(mapping_str_parts))

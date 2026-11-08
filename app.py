@@ -731,23 +731,24 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków (Predykcja po Ostatnim Losowaniu)")
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW (TYLKO 1 NAJCZĘSTSZA LICZBA POPRZEDZAJĄCA) ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków (Predykcja po 1 Głównej Liczbie)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
       if latest_hour == "14:00"
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – sugerowana predykcja | **☀️✅ / 🌙✅** – trafienie."
+      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – predykcja (tylko na bazie #1 najczęstszego poprzednika) | **☀️✅ / 🌙✅** – trafienie."
   )
 
   @st.cache_data
   def get_prediction_map(current_zakres):
     sub_df = df.tail(int(current_zakres))
-    pred_map = defaultdict(Counter)
+    pred_map = {}
     for session_time in ["14:00", "22:00"]:
       sub = sub_df[sub_df["Godzina"] == session_time].reset_index(drop=True)
+      counter_map = defaultdict(Counter)
       for i in range(1, len(sub)):
         prev_nums = {
             int(str(v).replace(".0", "").strip())
@@ -763,7 +764,12 @@ if df is not None and not df.empty:
         for j in jumpers:
           for p in prev_nums:
             if p != j:
-              pred_map[j][p] += 1
+              counter_map[j][p] += 1
+      # Dla każdego skoczka wybieramy TYLKO JEDNĄ (absolutnie najczęstszą) liczbę poprzedzającą
+      for j_num, c in counter_map.items():
+        if c:
+          most_common_pred = c.most_common(1)[0][0]
+          pred_map[j_num] = most_common_pred
     return pred_map
 
   pred_map = get_prediction_map(zakres)
@@ -802,9 +808,10 @@ if df is not None and not df.empty:
   for n_str in top_15_combined:
     n_int = int(n_str)
     is_predicted = False
+    
+    # Sprawdzamy predykcję: czy absolutnie #1 najczęstszy poprzednik tego skoczka wystąpił w poprzednim losowaniu
     if prev_overall_nums and n_int in pred_map:
-      top_associated_preds = [p for p, _ in pred_map[n_int].most_common(5)]
-      if any(p in prev_overall_nums for p in top_associated_preds):
+      if pred_map[n_int] in prev_overall_nums:
         is_predicted = True
 
     pred_tick = "🎯" if is_predicted else ""
@@ -814,14 +821,13 @@ if df is not None and not df.empty:
     
     common_items.append(f"**{n_str}**{pred_tick}{ticks_str}")
 
-  # Podział na dwie czytelne linie (pierwsza 8, druga 7 liczb)
   line1_items = common_items[:8]
   line2_items = common_items[8:]
 
   st.markdown("   ".join(line1_items))
   st.markdown("   ".join(line2_items))
   
-  st.markdown("Legenda: **🎯** – sugerowana predykcja (liczba powiązana z poprzednim losowaniem) | **☀️✅ / 🌙✅** – faktyczne trafienie w ostatnim losowaniu.")
+  st.markdown("Legenda: **🎯** – predykcja (gdy główny #1 poprzednik wystąpił w poprzednim losowaniu) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
 
   st.divider()
 

@@ -377,12 +377,10 @@ if df is not None and not df.empty:
       curr_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
       jumpers = prev_nums.intersection(curr_nums)
       
-      # Sprawdzamy czy poprzednie liczby z tego kroku pasują do prev_session_nums
       active_overlap = prev_nums.intersection(prev_session_nums)
       if active_overlap:
         for j in jumpers:
           if f"{j:02d}" in candidate_list:
-            # Liczymy siłę wystąpień powiązanych z poprzednimi liczbami
             transition_scores[f"{j:02d}"] += len(active_overlap)
 
     if not transition_scores:
@@ -416,7 +414,6 @@ if df is not None and not df.empty:
         if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
     }
 
-  # Ścisłe predykcje Top 3 dla parzystych i nieparzystych osobno
   pred_even_14 = get_strict_top_predictions(zakres, "14:00", even_14, prev_nums_14, top_k=3)
   pred_odd_14 = get_strict_top_predictions(zakres, "14:00", odd_14, prev_nums_14, top_k=3)
 
@@ -804,15 +801,15 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków (Predykcja po Ostatnim Losowaniu)")
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE (Z PREDYKCJĄ TOP 3) ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków (Top 3 Predykcje 🎯)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
       if latest_hour == "14:00"
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – predykcja | **☀️✅ / 🌙✅** – trafienie."
+      f"Top 15 wspólnych skoczków w dwóch rzędach. Znak **🎯** – Top 3 predykcje | **☀️✅ / 🌙✅** – trafienia."
   )
 
   j14_list = get_session_top_jumpers(zakres, "14:00", 20)
@@ -836,11 +833,17 @@ if df is not None and not df.empty:
   
   top_15_combined = sorted(top_15_combined[:15], key=lambda x: int(x))
 
+  # Obliczamy ścisłe predykcje Top 3 dla wspólnych skoczków
+  pred_common = get_strict_top_predictions(zakres, "22:00", top_15_combined, prev_nums_22, top_k=3)
+
   common_items = []
   for n_str in top_15_combined:
+    is_predicted = n_str in pred_common
+    pred_tick = "🎯" if is_predicted else ""
     hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
     hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
-    ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
+    ticks_str = f"[{pred_tick}{hit_14}{hit_22}]" if (pred_tick or hit_14 or hit_22) else ""
+    
     common_items.append(f"**{n_str}**{ticks_str}")
 
   line1_items = common_items[:8]
@@ -849,7 +852,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line1_items))
   st.markdown("   ".join(line2_items))
   
-  st.markdown("Legenda: **☀️✅ / 🌙✅** – faktyczne trafienie w sesjach.")
+  st.markdown("Legenda: **🎯** – predykcja (Top 3) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
 
   st.divider()
 
@@ -914,7 +917,7 @@ if df is not None and not df.empty:
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
         if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace('.0', '').strip()
+        else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
         if pd.notna(val) and str(val).strip()
     ]

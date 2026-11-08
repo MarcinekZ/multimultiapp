@@ -365,13 +365,40 @@ if df is not None and not df.empty:
 
 
   @st.cache_data
-  def get_strict_top_predictions(current_zakres, session_time, candidate_list, prev_session_nums, top_k=3):
-    sub_df = df.tail(int(current_zakres))
-    sub = sub_df[sub_df["Godzina"] == session_time].reset_index(drop=True)
+  def get_cross_session_top_jumpers(current_zakres, top_n=5):
+    sub = df.tail(int(current_zakres)).reset_index(drop=True)
+    if len(sub) < 2:
+      return []
+    counter = Counter()
+    for i in range(1, len(sub)):
+      prev_nums = set(sub.iloc[i - 1, 3:23].dropna().astype(int))
+      curr_nums = set(sub.iloc[i, 3:23].dropna().astype(int))
+      for n in prev_nums.intersection(curr_nums):
+        counter[n] += 1
+    top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
+    return sorted(top_j, key=lambda x: int(x))
+
+
+  @st.cache_data
+  def get_cross_session_strict_predictions_with_sources(current_zakres, candidate_list, prev_session_nums, top_k=5):
+    sub = df.tail(int(current_zakres)).reset_index(drop=True)
     if len(sub) < 2 or not prev_session_nums:
-      return set()
+      return set(), {}
 
     transition_scores = defaultdict(int)
+    mapping_sources = {} # pred_num -> source_num
+    
+    # Track historical transition source mapping
+    jumper_source_counter = defaultdict(Counter)
+    for i in range(1, len(sub)):
+      p_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+      c_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+      jumpers = p_nums.intersection(c_nums)
+      for j in jumpers:
+        for p in p_nums:
+          if p != j:
+            jumper_source_counter[j][p] += 1
+
     for i in range(1, len(sub)):
       prev_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
       curr_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
@@ -384,11 +411,28 @@ if df is not None and not df.empty:
             transition_scores[f"{j:02d}"] += len(active_overlap)
 
     if not transition_scores:
-      return set()
+      return set(), {}
 
     sorted_items = sorted(transition_scores.items(), key=lambda x: x[1], reverse=True)
-    top_predicted = [item[0] for item in sorted_items[:top_k]]
-    return set(top_predicted)
+    top_predicted_list = [item[0] for item in sorted_items[:top_k]]
+    
+    # For each top predicted number, find which number from prev_session_nums has the strongest historical link
+    for pred_str in top_predicted_list:
+      p_int = int(pred_str)
+      if p_int in jumper_source_counter:
+        # Find best source among prev_session_nums
+        possible_sources = jumper_source_counter[p_int]
+        # Filter by what's actually present in prev_session_nums
+        valid_sources = {src: cnt for src, cnt in possible_sources.items() if src in prev_session_nums}
+        if valid_sources:
+          best_src = max(valid_sources, key=valid_sources.get)
+          mapping_sources[pred_str] = f"{best_src:02d}"
+        else:
+          mapping_sources[pred_str] = "hist."
+      else:
+        mapping_sources[pred_str] = "hist."
+
+    return set(top_predicted_list), mapping_sources
 
 
   even_14, odd_14 = get_session_top15(zakres, "14:00")
@@ -399,33 +443,32 @@ if df is not None and not df.empty:
 
   prev_nums_14 = set()
   df_14_sub = df[df["Godzina"] == "14:00"]
-  prev_draw_list_14 = []
   if len(df_14_sub) >= 2:
-    prev_row_14 = df_14_sub.iloc[-2]
-    prev_nums_14 = {
-        int(str(v).replace(".0", "").strip())
-        for k, v in prev_row_14.items()
-        if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-    }
-    prev_draw_list_14 = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_14.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
+    prev_nums_14 = {int(str(v).replace(".0", "").strip()) for k, v in df_14_sub.iloc[-2].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
 
   prev_nums_22 = set()
   df_22_sub = df[df["Godzina"] == "22:00"]
-  prev_draw_list_22 = []
   if len(df_22_sub) >= 2:
-    prev_row_22 = df_22_sub.iloc[-2]
-    prev_nums_22 = {
+    prev_nums_22 = {int(str(v).replace(".0", "").strip()) for k, v in df_22_sub.iloc[-2].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+
+  # Przejściowa baza międzysesyjna
+  prev_cross_nums = set()
+  prev_cross_list = []
+  prev_cross_id = ""
+  prev_cross_date = ""
+  prev_cross_hour = ""
+
+  if len(df) >= 2:
+    prev_row_cross = df.iloc[-2]
+    prev_cross_id = str(prev_row_cross["ID"]).strip()
+    prev_cross_date = str(prev_row_cross["Data"]).strip()
+    prev_cross_hour = str(prev_row_cross["Godzina"]).strip()
+    prev_cross_nums = {
         int(str(v).replace(".0", "").strip())
-        for k, v in prev_row_22.items()
+        for k, v in prev_row_cross.items()
         if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
     }
-    prev_draw_list_22 = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_22.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
-
-  pred_even_14 = get_strict_top_predictions(zakres, "14:00", even_14, prev_nums_14, top_k=3)
-  pred_odd_14 = get_strict_top_predictions(zakres, "14:00", odd_14, prev_nums_14, top_k=3)
-
-  pred_even_22 = get_strict_top_predictions(zakres, "22:00", even_22, prev_nums_22, top_k=3)
-  pred_odd_22 = get_strict_top_predictions(zakres, "22:00", odd_22, prev_nums_22, top_k=3)
+    prev_cross_list = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_cross.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
 
 
   def get_distinct_coupons(session_time, limit, current_zakres):
@@ -507,91 +550,56 @@ if df is not None and not df.empty:
 
   # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
+  # (Standard sections...)
+  even_14, odd_14 = get_session_top15(zakres, "14:00")
+  even_22, odd_22 = get_session_top15(zakres, "22:00")
+  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
+  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
-  hits_14_e = (
-      sum(1 for n in even_14 if n in latest_nums_14)
-      if show_ticks_top15_14
-      else 0
-  )
-  hits_14_o = (
-      sum(1 for n in odd_14 if n in latest_nums_14)
-      if show_ticks_top15_14
-      else 0
-  )
+  pred_even_14 = get_cross_session_strict_predictions_with_sources(zakres, even_14, prev_nums_14, top_k=3)[0]
+  pred_odd_14 = get_cross_session_strict_predictions_with_sources(zakres, odd_14, prev_nums_14, top_k=3)[0]
+
+  hits_14_e = sum(1 for n in even_14 if n in latest_nums_14) if show_ticks_top15_14 else 0
+  hits_14_o = sum(1 for n in odd_14 if n in latest_nums_14) if show_ticks_top15_14 else 0
 
   st.markdown(
-      f"**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
-      f" losowanie [{last_date_14}] - Trafienia: {hits_14_e}/15)*:"
+      f"**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie losowanie [{last_date_14}] - Trafienia: {hits_14_e}/15)*:"
       if show_ticks_top15_14
       else "**Top 15 Parzyste (Top 3 Predykcje 🎯):**"
   )
-  st.code(
-      format_top15_list_strict_pred(
-          even_14, latest_nums_14, show_ticks_top15_14, pred_even_14
-      )
-      if even_14
-      else "Brak danych",
-      language=None,
-  )
+  st.code(format_top15_list_strict_pred(even_14, latest_nums_14, show_ticks_top15_14, pred_even_14) if even_14 else "Brak danych", language=None)
 
   st.markdown(
-      f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
-      f" losowanie [{last_date_14}] - Trafienia: {hits_14_o}/15)*:"
+      f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie losowanie [{last_date_14}] - Trafienia: {hits_14_o}/15)*:"
       if show_ticks_top15_14
       else "**Top 15 Nieparzyste (Top 3 Predykcje 🎯):**"
   )
-  st.code(
-      format_top15_list_strict_pred(
-          odd_14, latest_nums_14, show_ticks_top15_14, pred_odd_14
-      )
-      if odd_14
-      else "Brak danych",
-      language=None,
-  )
+  st.code(format_top15_list_strict_pred(odd_14, latest_nums_14, show_ticks_top15_14, pred_odd_14) if odd_14 else "Brak danych", language=None)
 
-  hits_j14 = (
-      sum(1 for n in jumpers_14 if n in latest_nums_14)
-      if show_ticks_top15_14
-      else 0
-  )
+  hits_j14 = sum(1 for n in jumpers_14 if n in latest_nums_14) if show_ticks_top15_14 else 0
   st.markdown(
-      f"**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia:"
-      f" {hits_j14}/5)*:"
+      f"**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00)** *(Trafienia: {hits_j14}/5)*:"
       if show_ticks_top15_14
       else "**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
   )
-  st.code(
-      format_top15_list_strict_pred(
-          jumpers_14, latest_nums_14, show_ticks_top15_14, set()
-      )
-      if jumpers_14
-      else "Brak danych",
-      language=None,
-  )
+  st.code(format_top15_list_strict_pred(jumpers_14, latest_nums_14, show_ticks_top15_14, set()) if jumpers_14 else "Brak danych", language=None)
 
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 14:00):**")
-
   col_14_s1, col_14_c1 = st.columns([1, 3])
   with col_14_s1:
     sz_14_1 = st.slider("Zestaw 1 (1-10):", 1, 10, 8, key="sz_14_1")
-
   col_14_s2, col_14_c2 = st.columns([1, 3])
   with col_14_s2:
     sz_14_2 = st.slider("Zestaw 2 (1-10):", 1, 10, 8, key="sz_14_2")
-
   col_14_s3, col_14_c3 = st.columns([1, 3])
   with col_14_s3:
     sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_14_3")
 
-  raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
-      "14:00", max(sz_14_1, sz_14_2, sz_14_3), zakres
-  )
-  
+  raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons("14:00", max(sz_14_1, sz_14_2, sz_14_3), zakres)
   if not st.session_state["locked_14"]:
     st.session_state["frozen_c14_1"] = raw_c14_1[:sz_14_1]
     st.session_state["frozen_c14_2"] = raw_c14_2[:sz_14_2]
     st.session_state["frozen_c14_3"] = raw_c14_3[:sz_14_3]
-  
   c_14_1 = st.session_state["frozen_c14_1"][:sz_14_1]
   c_14_2 = st.session_state["frozen_c14_2"][:sz_14_2]
   c_14_3 = st.session_state["frozen_c14_3"][:sz_14_3]
@@ -607,143 +615,54 @@ if df is not None and not df.empty:
         st.session_state["locked_14"] = False
         st.rerun()
 
-  hits_c14_1 = (
-      sum(1 for n in c_14_1 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c14_2 = (
-      sum(1 for n in c_14_2 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
-  hits_c14_3 = (
-      sum(1 for n in c_14_3 if n in latest_nums_14)
-      if show_ticks_coupon_14
-      else 0
-  )
+  hits_c14_1 = sum(1 for n in c_14_1 if n in latest_nums_14) if show_ticks_coupon_14 else 0
+  hits_c14_2 = sum(1 for n in c_14_2 if n in latest_nums_14) if show_ticks_coupon_14 else 0
+  hits_c14_3 = sum(1 for n in c_14_3 if n in latest_nums_14) if show_ticks_coupon_14 else 0
 
   with col_14_c1:
-    st.markdown(
-        f"**Zestaw 1 (Główny Top)** ({len(c_14_1)} liczb)"
-        f" {f'*(Trafienia: {hits_c14_1}/{len(c_14_1)})*' if show_ticks_coupon_14 else ''}"
-        f" {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}"
-    )
-    st.code(
-        format_coupon_list(c_14_1, latest_nums_14, show_ticks_coupon_14),
-        language=None,
-    )
-
+    st.markdown(f"**Zestaw 1 (Główny Top)** ({len(c_14_1)} liczb) {f'*(Trafienia: {hits_c14_1}/{len(c_14_1)})*' if show_ticks_coupon_14 else ''} {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}")
+    st.code(format_coupon_list(c_14_1, latest_nums_14, show_ticks_coupon_14), language=None)
   with col_14_c2:
-    st.markdown(
-        f"**Zestaw 2 (Przesunięty Top)** ({len(c_14_2)} liczb)"
-        f" {f'*(Trafienia: {hits_c14_2}/{len(c_14_2)})*' if show_ticks_coupon_14 else ''}"
-    )
-    st.code(
-        format_coupon_list(c_14_2, latest_nums_14, show_ticks_coupon_14),
-        language=None,
-    )
-
+    st.markdown(f"**Zestaw 2 (Przesunięty Top)** ({len(c_14_2)} liczb) {f'*(Trafienia: {hits_c14_2}/{len(c_14_2)})*' if show_ticks_coupon_14 else ''}")
+    st.code(format_coupon_list(c_14_2, latest_nums_14, show_ticks_coupon_14), language=None)
   with col_14_c3:
-    st.markdown(
-        f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_14_3)} liczb)"
-        f" {f'*(Trafienia: {hits_c14_3}/{len(c_14_3)})*' if show_ticks_coupon_14 else ''}"
-    )
-    st.code(
-        format_coupon_list(c_14_3, latest_nums_14, show_ticks_coupon_14),
-        language=None,
-    )
+    st.markdown(f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_14_3)} liczb) {f'*(Trafienia: {hits_c14_3}/{len(c_14_3)})*' if show_ticks_coupon_14 else ''}")
+    st.code(format_coupon_list(c_14_3, latest_nums_14, show_ticks_coupon_14), language=None)
 
   st.divider()
 
   # --- 4. TOP 15 ORAZ TOP PRZESKOKÓW (22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
+  pred_even_22 = get_cross_session_strict_predictions_with_sources(zakres, even_22, prev_nums_22, top_k=3)[0]
+  pred_odd_22 = get_cross_session_strict_predictions_with_sources(zakres, odd_22, prev_nums_22, top_k=3)[0]
+  hits_22_e = sum(1 for n in even_22 if n in latest_nums_22) if show_ticks_top15_22 else 0
+  hits_22_o = sum(1 for n in odd_22 if n in latest_nums_22) if show_ticks_top15_22 else 0
 
-  hits_22_e = (
-      sum(1 for n in even_22 if n in latest_nums_22)
-      if show_ticks_top15_22
-      else 0
-  )
-  hits_22_o = (
-      sum(1 for n in odd_22 if n in latest_nums_22)
-      if show_ticks_top15_22
-      else 0
-  )
+  st.markdown(f"**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅):** *(Ostatnie losowanie [{last_date_22}] - Trafienia: {hits_22_e}/15)*:" if show_ticks_top15_22 else "**Top 15 Parzyste (Top 3 Predykcje 🎯):**")
+  st.code(format_top15_list_strict_pred(even_22, latest_nums_22, show_ticks_top15_22, pred_even_22) if even_22 else "Brak danych", language=None)
+  st.markdown(f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie losowanie [{last_date_22}] - Trafienia: {hits_22_o}/15)*:" if show_ticks_top15_22 else "**Top 15 Nieparzyste (Top 3 Predykcje 🎯):**")
+  st.code(format_top15_list_strict_pred(odd_22, latest_nums_22, show_ticks_top15_22, pred_odd_22) if odd_22 else "Brak danych", language=None)
 
-  st.markdown(
-      "**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅):**"
-      f" *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
-      f" {hits_22_e}/15)*:"
-      if show_ticks_top15_22
-      else "**Top 15 Parzyste (Top 3 Predykcje 🎯):**"
-  )
-  st.code(
-      format_top15_list_strict_pred(
-          even_22, latest_nums_22, show_ticks_top15_22, pred_even_22
-      )
-      if even_22
-      else "Brak danych",
-      language=None,
-  )
-
-  st.markdown(
-      f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
-      f" losowanie [{last_date_22}] - Trafienia: {hits_22_o}/15)*:"
-      if show_ticks_top15_22
-      else "**Top 15 Nieparzyste (Top 3 Predykcje 🎯):**"
-  )
-  st.code(
-      format_top15_list_strict_pred(
-          odd_22, latest_nums_22, show_ticks_top15_22, pred_odd_22
-      )
-      if odd_22
-      else "Brak danych",
-      language=None,
-  )
-
-  hits_j22 = (
-      sum(1 for n in jumpers_22 if n in latest_nums_22)
-      if show_ticks_top15_22
-      else 0
-  )
-  st.markdown(
-      f"**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia:"
-      f" {hits_j22}/5)*:"
-      if show_ticks_top15_22
-      else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
-  )
-  st.code(
-      format_top15_list_strict_pred(
-          jumpers_22, latest_nums_22, show_ticks_top15_22, set()
-      )
-      if jumpers_22
-      else "Brak danych",
-      language=None,
-  )
+  hits_j22 = sum(1 for n in jumpers_22 if n in latest_nums_22) if show_ticks_top15_22 else 0
+  st.markdown(f"**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00)** *(Trafienia: {hits_j22}/5)*:" if show_ticks_top15_22 else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00):**")
+  st.code(format_top15_list_strict_pred(jumpers_22, latest_nums_22, show_ticks_top15_22, set()) if jumpers_22 else "Brak danych", language=None)
 
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 22:00):**")
-
   col_22_s1, col_22_c1 = st.columns([1, 3])
   with col_22_s1:
     sz_22_1 = st.slider("Zestaw 1 (1-10):", 1, 10, 8, key="sz_22_1")
-
   col_22_s2, col_22_c2 = st.columns([1, 3])
   with col_22_s2:
     sz_22_2 = st.slider("Zestaw 2 (1-10):", 1, 10, 8, key="sz_22_2")
-
   col_22_s3, col_22_c3 = st.columns([1, 3])
   with col_22_s3:
     sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_22_3")
 
-  raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
-      "22:00", max(sz_22_1, sz_22_2, sz_22_3), zakres
-  )
-  
+  raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons("22:00", max(sz_22_1, sz_22_2, sz_22_3), zakres)
   if not st.session_state["locked_22"]:
     st.session_state["frozen_c22_1"] = raw_c22_1[:sz_22_1]
     st.session_state["frozen_c22_2"] = raw_c22_2[:sz_22_2]
     st.session_state["frozen_c22_3"] = raw_c22_3[:sz_22_3]
-  
   c_22_1 = st.session_state["frozen_c22_1"][:sz_22_1]
   c_22_2 = st.session_state["frozen_c22_2"][:sz_22_2]
   c_22_3 = st.session_state["frozen_c22_3"][:sz_22_3]
@@ -759,123 +678,73 @@ if df is not None and not df.empty:
         st.session_state["locked_22"] = False
         st.rerun()
 
-  hits_c22_1 = (
-      sum(1 for n in c_22_1 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c22_2 = (
-      sum(1 for n in c_22_2 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
-  hits_c22_3 = (
-      sum(1 for n in c_22_3 if n in latest_nums_22)
-      if show_ticks_coupon_22
-      else 0
-  )
+  hits_c22_1 = sum(1 for n in c_22_1 if n in latest_nums_22) if show_ticks_coupon_22 else 0
+  hits_c22_2 = sum(1 for n in c_22_2 if n in latest_nums_22) if show_ticks_coupon_22 else 0
+  hits_c22_3 = sum(1 for n in c_22_3 if n in latest_nums_22) if show_ticks_coupon_22 else 0
 
   with col_22_c1:
-    st.markdown(
-        f"**Zestaw 1 (Główny Top)** ({len(c_22_1)} liczb)"
-        f" {f'*(Trafienia: {hits_c22_1}/{len(c_22_1)})*' if show_ticks_coupon_22 else ''}"
-        f" {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}"
-    )
-    st.code(
-        format_coupon_list(c_22_1, latest_nums_22, show_ticks_coupon_22),
-        language=None,
-    )
-
+    st.markdown(f"**Zestaw 1 (Główny Top)** ({len(c_22_1)} liczb) {f'*(Trafienia: {hits_c22_1}/{len(c_22_1)})*' if show_ticks_coupon_22 else ''} {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}")
+    st.code(format_coupon_list(c_22_1, latest_nums_22, show_ticks_coupon_22), language=None)
   with col_22_c2:
-    st.markdown(
-        f"**Zestaw 2 (Przesunięty Top)** ({len(c_22_2)} liczb)"
-        f" {f'*(Trafienia: {hits_c22_2}/{len(c_22_2)})*' if show_ticks_coupon_22 else ''}"
-    )
-    st.code(
-        format_coupon_list(c_22_2, latest_nums_22, show_ticks_coupon_22),
-        language=None,
-    )
-
+    st.markdown(f"**Zestaw 2 (Przesunięty Top)** ({len(c_22_2)} liczb) {f'*(Trafienia: {hits_c22_2}/{len(c_22_2)})*' if show_ticks_coupon_22 else ''}")
+    st.code(format_coupon_list(c_22_2, latest_nums_22, show_ticks_coupon_22), language=None)
   with col_22_c3:
-    st.markdown(
-        f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_22_3)} liczb)"
-        f" {f'*(Trafienia: {hits_c22_3}/{len(c_22_3)})*' if show_ticks_coupon_22 else ''}"
-    )
-    st.code(
-        format_coupon_list(c_22_3, latest_nums_22, show_ticks_coupon_22),
-        language=None,
-    )
+    st.markdown(f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_22_3)} liczb) {f'*(Trafienia: {hits_c22_3}/{len(c_22_3)})*' if show_ticks_coupon_22 else ''}")
+    st.code(format_coupon_list(c_22_3, latest_nums_22, show_ticks_coupon_22), language=None)
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE (TOP 5 PREDYKCJI) ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków (Top 5 Predykcje 🎯)")
-  st.caption(
-      f"Poprzednie wylosowane liczby sesji stanowiące bazę predykcji:"
-  )
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW MIĘDZYSESYJNYCH (14:00 ⇄ 22:00) Z MAPOWANIEM ŹRÓDEŁ ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 5 Predykcje 🎯)")
+  st.caption("Baza przejść międzysesyjnych (14:00 ⇄ 22:00) oparta na ostatnim losowaniu:")
   
-  # Wyświetlenie poprzednich liczb w czytelnym boksie (podzielone na 2 rzędy jak archiwum)
-  if prev_draw_list_22:
-    p_line1 = " ".join(prev_draw_list_22[:10])
-    p_line2 = " ".join(prev_draw_list_22[10:])
-    st.code(f"Poprzednie (22:00): {p_line1}\n{p_line2}", language=None)
+  if prev_cross_list:
+    p_line1 = " ".join(prev_cross_list[:10])
+    p_line2 = " ".join(prev_cross_list[10:])
+    st.code(f"Losowanie #{prev_cross_id} ({prev_cross_date} | ⏰ {prev_cross_hour}):\n{p_line1}\n{p_line2}", language=None)
 
-  st.caption(
-      f"Top 15 wspólnych skoczków w dwóch rzędach. Znak **🎯** – dokładnie 5 predykcji | **☀️✅ / 🌙✅** – trafienia."
-  )
-
-  j14_list = get_session_top_jumpers(zakres, "14:00", 20)
-  j22_list = get_session_top_jumpers(zakres, "22:00", 20)
-  
-  set_14 = set(j14_list)
-  set_22 = set(j22_list)
-  
-  common_pool = sorted(list(set_14.intersection(set_22)), key=lambda x: int(x))
-  union_pool = sorted(list(set_14.union(set_22)), key=lambda x: int(x))
-  
-  top_15_combined = common_pool.copy()
-  for n in union_pool:
-    if len(top_15_combined) < 15 and n not in top_15_combined:
-      top_15_combined.append(n)
-  if len(top_15_combined) < 15:
+  j_cross_list = get_cross_session_top_jumpers(zakres, 20)
+  top_15_cross = sorted(j_cross_list[:15], key=lambda x: int(x))
+  if len(top_15_cross) < 15:
     for i in range(1, 81):
       s_n = f"{i:02d}"
-      if len(top_15_combined) < 15 and s_n not in top_15_combined:
-        top_15_combined.append(s_n)
-  
-  top_15_combined = sorted(top_15_combined[:15], key=lambda x: int(x))
+      if len(top_15_cross) < 15 and s_n not in top_15_cross:
+        top_15_cross.append(s_n)
+  top_15_cross = sorted(top_15_cross[:15], key=lambda x: int(x))
 
-  pred_common = get_strict_top_predictions(zakres, "22:00", top_15_combined, prev_nums_22, top_k=5)
+  pred_cross, source_mapping = get_cross_session_strict_predictions_with_sources(zakres, top_15_cross, prev_cross_nums, top_k=5)
 
-  common_items = []
-  for n_str in top_15_combined:
-    is_predicted = n_str in pred_common
+  # Wyświetlenie mapowania: do jakiej liczby z poprzedniego losowania przypisana jest predykcja
+  if source_mapping:
+    mapping_str_parts = [f"**{pred}** ➔ z liczby **{src}**" for pred, src in sorted(source_mapping.items(), key=lambda x: int(x[0]))]
+    st.markdown("📌 **Przypisanie predykcji do liczb bazowych:** " + " | ".join(mapping_str_parts))
+
+  st.caption("Top 15 skoczków międzysesyjnych. Znak **🎯** – dokładnie 5 predykcji | **☀️✅ / 🌙✅** – trafienia.")
+
+  cross_items = []
+  for n_str in top_15_cross:
+    is_predicted = n_str in pred_cross
     pred_tick = "🎯" if is_predicted else ""
     hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
     hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
     ticks_str = f"[{pred_tick}{hit_14}{hit_22}]" if (pred_tick or hit_14 or hit_22) else ""
     
-    common_items.append(f"**{n_str}**{ticks_str}")
+    cross_items.append(f"**{n_str}**{ticks_str}")
 
-  line1_items = common_items[:8]
-  line2_items = common_items[8:]
+  line1_cross = cross_items[:8]
+  line2_cross = cross_items[8:]
 
-  st.markdown("   ".join(line1_items))
-  st.markdown("   ".join(line2_items))
+  st.markdown("   ".join(line1_cross))
+  st.markdown("   ".join(line2_cross))
   
-  st.markdown("Legenda: **🎯** – predykcja (dokładnie Top 5) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
+  st.markdown("Legenda: **🎯** – predykcja międzysesyjna (Top 5) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
 
   st.divider()
 
   # --- 6. ANALIZA PAR I TRÓJEK ---
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
-  selected_session_for_tuples = st.selectbox(
-      "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
-  )
-  df_tuples_session = df[df["Godzina"] == selected_session_for_tuples].tail(
-      int(zakres)
-  )
-
+  selected_session_for_tuples = st.selectbox("Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"])
+  df_tuples_session = df[df["Godzina"] == selected_session_for_tuples].tail(int(zakres))
 
   def get_top_tuples(df_session, n_size, limit=5):
     counter = Counter()
@@ -892,31 +761,16 @@ if df is not None and not df.empty:
           counter[comb] += 1
     return counter.most_common(limit)
 
-
   top_pairs = get_top_tuples(df_tuples_session, 2, 5)
   top_triplets = get_top_tuples(df_tuples_session, 3, 5)
 
   st.markdown(f"**Top 5 Par (Sesja {selected_session_for_tuples}):**")
-  pairs_display = [
-      f"({' - '.join(pair)}) [wystąpiły {cnt}x]" for pair, cnt in top_pairs
-  ]
-  st.code(
-      "\n".join(pairs_display)
-      if pairs_display
-      else "Za mało danych w zakresie",
-      language=None,
-  )
+  pairs_display = [f"({' - '.join(pair)}) [wystąpiły {cnt}x]" for pair, cnt in top_pairs]
+  st.code("\n".join(pairs_display) if pairs_display else "Za mało danych w zakresie", language=None)
 
   st.markdown(f"**Top 5 Trójek (Sesja {selected_session_for_tuples}):**")
-  triplets_display = [
-      f"({' - '.join(trip)}) [wystąpiły {cnt}x]" for trip, cnt in top_triplets
-  ]
-  st.code(
-      "\n".join(triplets_display)
-      if triplets_display
-      else "Za mało danych w zakresie",
-      language=None,
-  )
+  triplets_display = [f"({' - '.join(trip)}) [wystąpiły {cnt}x]" for trip, cnt in top_triplets]
+  st.code("\n".join(triplets_display) if triplets_display else "Za mało danych w zakresie", language=None)
 
   st.divider()
 
@@ -930,7 +784,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
+        if pd.notna(v) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

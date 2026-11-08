@@ -834,7 +834,6 @@ if df is not None and not df.empty:
   
   top_15_combined = sorted(top_15_combined[:15], key=lambda x: int(x))
 
-  # Twarde Top 5 dla wspólnych skoczków
   pred_common = get_strict_top_predictions(zakres, "22:00", top_15_combined, prev_nums_22, top_k=5)
 
   common_items = []
@@ -917,10 +916,10 @@ if df is not None and not df.empty:
   for _, row in df_reversed.iterrows():
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0', '').strip().isdigit()"
+        if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
+        if pd.notna(v) and str(v).strip()
     ]
     display_data.append({
         "ID": row["ID"],

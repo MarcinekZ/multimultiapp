@@ -731,7 +731,7 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PREDYKCJĄ PREDYCYJNĄ (PTASZEK 🎯) ---
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE ---
   st.subheader("🔥 Top 15 Wspólnych Skoczków (Predykcja po Ostatnim Losowaniu)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
@@ -739,10 +739,9 @@ if df is not None and not df.empty:
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Top 15 skoczków. Znak **🎯** oznacza liczbę o podwyższonym prawdopodobieństwie wystąpienia na bazie historii przejść z ostatnich wyników."
+      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – sugerowana predykcja | **☀️✅ / 🌙✅** – trafienie."
   )
 
-  # Pobieramy bazę do analizy mapy przejść (predecessors)
   @st.cache_data
   def get_prediction_map(current_zakres):
     sub_df = df.tail(int(current_zakres))
@@ -769,8 +768,6 @@ if df is not None and not df.empty:
 
   pred_map = get_prediction_map(zakres)
 
-  # Ostatnie liczby z poprzedniego losowania dla oceny predykcji
-  # Pobieramy przedostatnie losowanie z bazy jako punkt odniesienia
   prev_overall_nums = set()
   if len(df) >= 2:
     prev_row = df.iloc[-2]
@@ -804,26 +801,27 @@ if df is not None and not df.empty:
   common_items = []
   for n_str in top_15_combined:
     n_int = int(n_str)
-    
-    # Sprawdzamy predykcję: czy ten skoczek ma silną historię po którymś z numerów z poprzedniego losowania
     is_predicted = False
     if prev_overall_nums and n_int in pred_map:
-      # Jeśli którykolwiek z poprzednich numerów znajduje się w top powiązanych z tym skoczkiem
       top_associated_preds = [p for p, _ in pred_map[n_int].most_common(5)]
       if any(p in prev_overall_nums for p in top_associated_preds):
         is_predicted = True
 
     pred_tick = "🎯" if is_predicted else ""
-    
     hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
     hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
     ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
     
     common_items.append(f"**{n_str}**{pred_tick}{ticks_str}")
 
-  line_display = "   ".join(common_items)
-  st.markdown(f"🎯 {line_display}")
-  st.caption("Legenda: **🎯** – sugerowana predykcja (liczba powiązana z poprzednim losowaniem) | **☀️✅ / 🌙✅** – faktyczne trafienie w ostatnim losowaniu.")
+  # Podział na dwie czytelne linie (pierwsza 8, druga 7 liczb)
+  line1_items = common_items[:8]
+  line2_items = common_items[8:]
+
+  st.markdown("   ".join(line1_items))
+  st.markdown("   ".join(line2_items))
+  
+  st.markdown("Legenda: **🎯** – sugerowana predykcja (liczba powiązana z poprzednim losowaniem) | **☀️✅ / 🌙✅** – faktyczne trafienie w ostatnim losowaniu.")
 
   st.divider()
 

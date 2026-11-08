@@ -399,21 +399,27 @@ if df is not None and not df.empty:
 
   prev_nums_14 = set()
   df_14_sub = df[df["Godzina"] == "14:00"]
+  prev_draw_list_14 = []
   if len(df_14_sub) >= 2:
+    prev_row_14 = df_14_sub.iloc[-2]
     prev_nums_14 = {
         int(str(v).replace(".0", "").strip())
-        for k, v in df_14_sub.iloc[-2].items()
+        for k, v in prev_row_14.items()
         if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
     }
+    prev_draw_list_14 = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_14.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
 
   prev_nums_22 = set()
   df_22_sub = df[df["Godzina"] == "22:00"]
+  prev_draw_list_22 = []
   if len(df_22_sub) >= 2:
+    prev_row_22 = df_22_sub.iloc[-2]
     prev_nums_22 = {
         int(str(v).replace(".0", "").strip())
-        for k, v in df_22_sub.iloc[-2].items()
+        for k, v in prev_row_22.items()
         if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
     }
+    prev_draw_list_22 = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_22.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
 
   pred_even_14 = get_strict_top_predictions(zakres, "14:00", even_14, prev_nums_14, top_k=3)
   pred_odd_14 = get_strict_top_predictions(zakres, "14:00", odd_14, prev_nums_14, top_k=3)
@@ -804,11 +810,16 @@ if df is not None and not df.empty:
 
   # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE (TOP 5 PREDYKCJI) ---
   st.subheader("🔥 Top 15 Wspólnych Skoczków (Top 5 Predykcje 🎯)")
-  active_check_label = (
-      f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
-      if latest_hour == "14:00"
-      else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
+  st.caption(
+      f"Poprzednie wylosowane liczby sesji stanowiące bazę predykcji:"
   )
+  
+  # Wyświetlenie poprzednich liczb w czytelnym boksie (podzielone na 2 rzędy jak archiwum)
+  if prev_draw_list_22:
+    p_line1 = " ".join(prev_draw_list_22[:10])
+    p_line2 = " ".join(prev_draw_list_22[10:])
+    st.code(f"Poprzednie (22:00): {p_line1}\n{p_line2}", language=None)
+
   st.caption(
       f"Top 15 wspólnych skoczków w dwóch rzędach. Znak **🎯** – dokładnie 5 predykcji | **☀️✅ / 🌙✅** – trafienia."
   )
@@ -919,7 +930,7 @@ if df is not None and not df.empty:
         if str(v).replace(".0", "").strip().isdigit()
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        if pd.notna(val) and str(val).strip()
     ]
     display_data.append({
         "ID": row["ID"],

@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 import datetime
 import glob
 from itertools import combinations
@@ -409,7 +409,6 @@ if df is not None and not df.empty:
       if len(set1) < limit and s_num not in set1:
         set1.append(s_num)
       if len(set2) < limit and s_num not in set2:
-        set2.append(set2.append(s_num) if hasattr(set2, 'append') else None) # safe
         set2.append(s_num)
       if len(set3) < limit and s_num not in set3:
         set3.append(s_num)
@@ -420,7 +419,8 @@ if df is not None and not df.empty:
         sorted(set3[:limit], key=lambda x: int(x)),
     )
 
-  # --- MECHANIZM ZAMRAŻANIA / BLOKOWANIA ZESTAWÓW (SESSION STATE) ---
+
+  # --- SESSION STATE DLA ZAMRAŻANIA ZESTAWÓW ---
   if "locked_14" not in st.session_state:
     st.session_state["locked_14"] = False
   if "frozen_c14_1" not in st.session_state:
@@ -512,7 +512,6 @@ if df is not None and not df.empty:
   with col_14_s3:
     sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_14_3")
 
-  # Generowanie lub pobieranie zamrożonych zestawów 14:00
   raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
       "14:00", max(sz_14_1, sz_14_2, sz_14_3), zakres
   )
@@ -659,7 +658,6 @@ if df is not None and not df.empty:
   with col_22_s3:
     sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_22_3")
 
-  # Generowanie lub pobieranie zamrożonych zestawów 22:00
   raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
       "22:00", max(sz_22_1, sz_22_2, sz_22_3), zakres
   )
@@ -733,20 +731,57 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 10 WSPÓLNYCH SKOCZKÓW (14:00 & 22:00) W JEDNEJ LINIJCE ---
-  st.subheader("🔥 Top 10 Wspólnych Skoczków (14:00 & 22:00)")
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PREDYKCJĄ PREDYCYJNĄ (PTASZEK 🎯) ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków (Predykcja po Ostatnim Losowaniu)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
       if latest_hour == "14:00"
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Najsilniejsze połączone liczby ze skoczków sesji 14:00 i 22:00,"
-      f" zweryfikowane względem: **{active_check_label}**."
+      f"Top 15 skoczków. Znak **🎯** oznacza liczbę o podwyższonym prawdopodobieństwie wystąpienia na bazie historii przejść z ostatnich wyników."
   )
 
-  j14_list = get_session_top_jumpers(zakres, "14:00", 15)
-  j22_list = get_session_top_jumpers(zakres, "22:00", 15)
+  # Pobieramy bazę do analizy mapy przejść (predecessors)
+  @st.cache_data
+  def get_prediction_map(current_zakres):
+    sub_df = df.tail(int(current_zakres))
+    pred_map = defaultdict(Counter)
+    for session_time in ["14:00", "22:00"]:
+      sub = sub_df[sub_df["Godzina"] == session_time].reset_index(drop=True)
+      for i in range(1, len(sub)):
+        prev_nums = {
+            int(str(v).replace(".0", "").strip())
+            for k, v in sub.iloc[i - 1].items()
+            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
+        }
+        curr_nums = {
+            int(str(v).replace(".0", "").strip())
+            for k, v in sub.iloc[i].items()
+            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
+        }
+        jumpers = prev_nums.intersection(curr_nums)
+        for j in jumpers:
+          for p in prev_nums:
+            if p != j:
+              pred_map[j][p] += 1
+    return pred_map
+
+  pred_map = get_prediction_map(zakres)
+
+  # Ostatnie liczby z poprzedniego losowania dla oceny predykcji
+  # Pobieramy przedostatnie losowanie z bazy jako punkt odniesienia
+  prev_overall_nums = set()
+  if len(df) >= 2:
+    prev_row = df.iloc[-2]
+    prev_overall_nums = {
+        int(str(v).replace(".0", "").strip())
+        for k, v in prev_row.items()
+        if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
+    }
+
+  j14_list = get_session_top_jumpers(zakres, "14:00", 20)
+  j22_list = get_session_top_jumpers(zakres, "22:00", 20)
   
   set_14 = set(j14_list)
   set_22 = set(j22_list)
@@ -754,27 +789,41 @@ if df is not None and not df.empty:
   common_pool = sorted(list(set_14.intersection(set_22)), key=lambda x: int(x))
   union_pool = sorted(list(set_14.union(set_22)), key=lambda x: int(x))
   
-  top_10_combined = common_pool.copy()
+  top_15_combined = common_pool.copy()
   for n in union_pool:
-    if len(top_10_combined) < 10 and n not in top_10_combined:
-      top_10_combined.append(n)
-  if len(top_10_combined) < 10:
+    if len(top_15_combined) < 15 and n not in top_15_combined:
+      top_15_combined.append(n)
+  if len(top_15_combined) < 15:
     for i in range(1, 81):
       s_n = f"{i:02d}"
-      if len(top_10_combined) < 10 and s_n not in top_10_combined:
-        top_10_combined.append(s_n)
+      if len(top_15_combined) < 15 and s_n not in top_15_combined:
+        top_15_combined.append(s_n)
   
-  top_10_combined = sorted(top_10_combined[:10], key=lambda x: int(x))
+  top_15_combined = sorted(top_15_combined[:15], key=lambda x: int(x))
 
   common_items = []
-  for n in top_10_combined:
-    hit_14 = "☀️✅" if (show_ticks_top15_14 and n in latest_nums_14) else ""
-    hit_22 = "🌙✅" if (show_ticks_top15_22 and n in latest_nums_22) else ""
+  for n_str in top_15_combined:
+    n_int = int(n_str)
+    
+    # Sprawdzamy predykcję: czy ten skoczek ma silną historię po którymś z numerów z poprzedniego losowania
+    is_predicted = False
+    if prev_overall_nums and n_int in pred_map:
+      # Jeśli którykolwiek z poprzednich numerów znajduje się w top powiązanych z tym skoczkiem
+      top_associated_preds = [p for p, _ in pred_map[n_int].most_common(5)]
+      if any(p in prev_overall_nums for p in top_associated_preds):
+        is_predicted = True
+
+    pred_tick = "🎯" if is_predicted else ""
+    
+    hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
+    hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
     ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
-    common_items.append(f"**{n}**{ticks_str}")
+    
+    common_items.append(f"**{n_str}**{pred_tick}{ticks_str}")
 
   line_display = "   ".join(common_items)
   st.markdown(f"🎯 {line_display}")
+  st.caption("Legenda: **🎯** – sugerowana predykcja (liczba powiązana z poprzednim losowaniem) | **☀️✅ / 🌙✅** – faktyczne trafienie w ostatnim losowaniu.")
 
   st.divider()
 

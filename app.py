@@ -386,7 +386,8 @@ if df is not None and not df.empty:
     if not transition_scores:
       return set()
 
-    top_predicted = sorted(transition_scores.keys(), key=lambda x: transition_scores[x], reverse=True)[:top_k]
+    sorted_items = sorted(transition_scores.items(), key=lambda x: x[1], reverse=True)
+    top_predicted = [item[0] for item in sorted_items[:top_k]]
     return set(top_predicted)
 
 
@@ -801,15 +802,15 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE (Z PREDYKCJĄ TOP 3) ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków (Top 3 Predykcje 🎯)")
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z PODZIAŁEM NA 2 LINIE (TOP 5 PREDYKCJI) ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków (Top 5 Predykcje 🎯)")
   active_check_label = (
       f"Losowanie #{last_id_14} ({last_date_14} 14:00)"
       if latest_hour == "14:00"
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Top 15 wspólnych skoczków w dwóch rzędach. Znak **🎯** – Top 3 predykcje | **☀️✅ / 🌙✅** – trafienia."
+      f"Top 15 wspólnych skoczków w dwóch rzędach. Znak **🎯** – dokładnie 5 predykcji | **☀️✅ / 🌙✅** – trafienia."
   )
 
   j14_list = get_session_top_jumpers(zakres, "14:00", 20)
@@ -833,8 +834,8 @@ if df is not None and not df.empty:
   
   top_15_combined = sorted(top_15_combined[:15], key=lambda x: int(x))
 
-  # Obliczamy ścisłe predykcje Top 3 dla wspólnych skoczków
-  pred_common = get_strict_top_predictions(zakres, "22:00", top_15_combined, prev_nums_22, top_k=3)
+  # Twarde Top 5 dla wspólnych skoczków
+  pred_common = get_strict_top_predictions(zakres, "22:00", top_15_combined, prev_nums_22, top_k=5)
 
   common_items = []
   for n_str in top_15_combined:
@@ -852,7 +853,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line1_items))
   st.markdown("   ".join(line2_items))
   
-  st.markdown("Legenda: **🎯** – predykcja (Top 3) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
+  st.markdown("Legenda: **🎯** – predykcja (dokładnie Top 5) | **☀️✅ / 🌙✅** – faktyczne trafienie.")
 
   st.divider()
 
@@ -916,7 +917,7 @@ if df is not None and not df.empty:
   for _, row in df_reversed.iterrows():
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0", "").strip().isdigit()
+        if str(v).replace(".0', '').strip().isdigit()"
         else str(v).replace(".0", "").strip()
         for v in row.iloc[3:].values
         if pd.notna(val) and str(val).strip()

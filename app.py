@@ -62,17 +62,15 @@ def load_data():
 
   df = pd.concat(dfs, ignore_index=True)
 
-  # Zapewnienie równej struktury: ID, Data, Godzina + dokładnie 20 liczb (kolumny 0 do 22 lub więcej)
-  if df.shape[1] >= 23:
-    df = df.iloc[:, :23]
-    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
-    df.columns = cols
-  else:
-    # Jeśli plik ma mniej kolumn, uzupełniamy brakujące do 23 kolumn (ID, Data, Godzina + 20 liczb)
-    while df.shape[1] < 23:
-      df[df.shape[1]] = None
-    cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
-    df.columns = cols[: df.shape[1]]
+  # Standaryzacja kolumn: ID, Data, Godzina + dokładnie 20 liczb (L1 do L20)
+  cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
+  
+  # Jeśli DataFrame ma za mało kolumn, uzupełniamy pustymi
+  while df.shape[1] < len(cols):
+    df[df.shape[1]] = None
+    
+  df = df.iloc[:, :len(cols)]
+  df.columns = cols
 
   if "ID" in df.columns:
     df["ID"] = (
@@ -142,6 +140,17 @@ if df is not None and not df.empty:
   st.sidebar.success(f"🟢 Baza aktywna (Łącznie losowań: {len(df)})")
   total_draws = len(df)
 
+  # Pomocnicza funkcja do pobierania dokładnie 20 liczb z wiersza
+  def get_row_numbers(row):
+    nums = []
+    for i in range(1, 21):
+      val = row.get(f"L{i}")
+      if pd.notna(val) and str(val).strip():
+        cleaned_v = str(val).replace(".0", "").strip()
+        if cleaned_v:
+          nums.append(cleaned_v)
+    return nums
+
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
@@ -151,16 +160,8 @@ if df is not None and not df.empty:
     curr = recent_df.iloc[i]
     prev = recent_df.iloc[i + 1]
 
-    curr_nums = [
-        val
-        for val in curr.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
-    prev_nums = [
-        val
-        for val in prev.iloc[3:].values
-        if pd.notna(val) and str(val).strip()
-    ]
+    curr_nums = get_row_numbers(curr)
+    prev_nums = get_row_numbers(prev)
 
     curr_set = set(curr_nums)
     prev_set = set(prev_nums)
@@ -175,10 +176,9 @@ if df is not None and not df.empty:
     )
 
     formatted_display = []
-    for val in curr_nums:
-      val_clean = str(val).replace(".0", "").strip()
+    for val_clean in curr_nums:
       val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
-      if val in repeated or val_clean in repeated:
+      if val_clean in repeated or (val_clean.isdigit() and str(int(val_clean)) in repeated):
         formatted_display.append(f"🔄{val_str}")
       else:
         formatted_display.append(f"{val_str}")
@@ -252,11 +252,8 @@ if df is not None and not df.empty:
     last_id_14 = str(latest_draw_14["ID"]).strip()
     last_date_14 = str(latest_draw_14["Data"]).strip()
     latest_nums_14 = {
-        f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace(".0", "").strip()
-        for v in latest_draw_14.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        f"{int(v):02d}" if v.isdigit() else v
+        for v in get_row_numbers(latest_draw_14)
     }
 
   latest_nums_22 = set()
@@ -267,11 +264,8 @@ if df is not None and not df.empty:
     last_id_22 = str(latest_draw_22["ID"]).strip()
     last_date_22 = str(latest_draw_22["Data"]).strip()
     latest_nums_22 = {
-        f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0", "").strip().isdigit()
-        else str(v).strip()
-        for v in latest_draw_22.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
+        f"{int(v):02d}" if v.isdigit() else v
+        for v in get_row_numbers(latest_draw_22)
     }
 
   latest_overall = df.iloc[-1]
@@ -330,12 +324,10 @@ if df is not None and not df.empty:
     if df_session.empty:
       return [], []
     all_session_nums = []
-    for row_vals in df_session.iloc[:, 3:].values:
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            all_session_nums.append(f"{int(cleaned_v):02d}")
+    for _, row in df_session.iterrows():
+      for val in get_row_numbers(row):
+        if val.isdigit():
+          all_session_nums.append(f"{int(val):02d}")
 
     counts = pd.Series(all_session_nums).value_counts()
     even_counts = counts[
@@ -359,8 +351,8 @@ if df is not None and not df.empty:
       return []
     counter = Counter()
     for i in range(1, len(sub)):
-      prev_nums = set(sub.iloc[i - 1, 3:23].dropna().astype(int))
-      curr_nums = set(sub.iloc[i, 3:23].dropna().astype(int))
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
       for n in prev_nums.intersection(curr_nums):
         counter[n] += 1
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
@@ -374,8 +366,8 @@ if df is not None and not df.empty:
       return []
     counter = Counter()
     for i in range(1, len(sub)):
-      prev_nums = set(sub.iloc[i - 1, 3:23].dropna().astype(int))
-      curr_nums = set(sub.iloc[i, 3:23].dropna().astype(int))
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
       for n in prev_nums.intersection(curr_nums):
         counter[n] += 1
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
@@ -393,8 +385,8 @@ if df is not None and not df.empty:
     
     jumper_source_counter = defaultdict(Counter)
     for i in range(1, len(sub)):
-      p_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
-      c_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+      p_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
+      c_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
       jumpers = p_nums.intersection(c_nums)
       for j in jumpers:
         for p in p_nums:
@@ -402,8 +394,8 @@ if df is not None and not df.empty:
             jumper_source_counter[j][p] += 1
 
     for i in range(1, len(sub)):
-      prev_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
-      curr_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
       jumpers = prev_nums.intersection(curr_nums)
       
       active_overlap = prev_nums.intersection(prev_session_nums)
@@ -443,12 +435,12 @@ if df is not None and not df.empty:
   prev_nums_14 = set()
   df_14_sub = df[df["Godzina"] == "14:00"]
   if len(df_14_sub) >= 2:
-    prev_nums_14 = {int(str(v).replace(".0", "").strip()) for k, v in df_14_sub.iloc[-2].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+    prev_nums_14 = {int(v) for v in get_row_numbers(df_14_sub.iloc[-2]) if v.isdigit()}
 
   prev_nums_22 = set()
   df_22_sub = df[df["Godzina"] == "22:00"]
   if len(df_22_sub) >= 2:
-    prev_nums_22 = {int(str(v).replace(".0", "").strip()) for k, v in df_22_sub.iloc[-2].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+    prev_nums_22 = {int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()}
 
   prev_cross_nums = set()
   prev_cross_list = []
@@ -461,12 +453,8 @@ if df is not None and not df.empty:
     prev_cross_id = str(prev_row_cross["ID"]).strip()
     prev_cross_date = str(prev_row_cross["Data"]).strip()
     prev_cross_hour = str(prev_row_cross["Godzina"]).strip()
-    prev_cross_nums = {
-        int(str(v).replace(".0", "").strip())
-        for k, v in prev_row_cross.items()
-        if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-    }
-    prev_cross_list = sorted([f"{int(str(v).replace('.0', '').strip()):02d}" for k, v in prev_row_cross.items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()], key=lambda x: int(x))
+    prev_cross_nums = {int(v) for v in get_row_numbers(prev_row_cross) if v.isdigit()}
+    prev_cross_list = sorted([f"{int(v):02d}" for v in get_row_numbers(prev_row_cross) if v.isdigit()], key=lambda x: int(x))
 
 
   def get_distinct_coupons(session_time, limit, current_zakres):
@@ -477,12 +465,10 @@ if df is not None and not df.empty:
       return fallback, fallback, fallback
 
     all_session_nums = []
-    for row_vals in df_session.iloc[:, 3:].values:
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            all_session_nums.append(f"{int(cleaned_v):02d}")
+    for _, row in df_session.iterrows():
+      for val in get_row_numbers(row):
+        if val.isdigit():
+          all_session_nums.append(f"{int(val):02d}")
 
     counts = pd.Series(all_session_nums).value_counts()
     top_freq = sorted(counts.index.tolist(), key=lambda x: counts[x], reverse=True)
@@ -696,8 +682,9 @@ if df is not None and not df.empty:
   st.caption("Baza przejść międzysesyjnych (14:00 ⇄ 22:00) oparta na ostatnim losowaniu:")
   
   if prev_cross_list:
-    p_line1 = " ".join(prev_cross_list[:10])
-    p_line2 = " ".join(prev_cross_list[10:])
+    formatted_cross = [f"{int(v):02d}" if v.isdigit() else v for v in prev_cross_list]
+    p_line1 = " ".join(formatted_cross[:10])
+    p_line2 = " ".join(formatted_cross[10:])
     st.code(f"Losowanie #{prev_cross_id} ({prev_cross_date} | ⏰ {prev_cross_hour}):\n{p_line1}\n{p_line2}", language=None)
 
   j_cross_list = get_cross_session_top_jumpers(zakres, 20)
@@ -744,13 +731,8 @@ if df is not None and not df.empty:
 
   def get_top_tuples(df_session, n_size, limit=5):
     counter = Counter()
-    for row_vals in df_session.iloc[:, 3:].values:
-      draw_nums = []
-      for val in row_vals:
-        if pd.notna(val) and str(val).strip():
-          cleaned_v = str(val).replace(".0", "").strip()
-          if cleaned_v.isdigit():
-            draw_nums.append(f"{int(cleaned_v):02d}")
+    for _, row in df_session.iterrows():
+      draw_nums = [f"{int(v):02d}" for v in get_row_numbers(row) if v.isdigit()]
       if len(draw_nums) >= n_size:
         sorted_nums = sorted(list(set(draw_nums)), key=lambda x: int(x))
         for comb in combinations(sorted_nums, n_size):
@@ -775,13 +757,7 @@ if df is not None and not df.empty:
   display_data = []
   df_reversed = df.iloc[::-1]
   for _, row in df_reversed.iterrows():
-    nums = [
-        f"{int(str(v).replace('.0', '').strip()):02d}"
-        if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace(".0", "").strip()
-        for v in row.iloc[3:].values
-        if pd.notna(v) and str(v).strip()
-    ]
+    nums = [f"{int(v):02d}" for v in get_row_numbers(row) if v.isdigit()]
     display_data.append({
         "ID": row["ID"],
         "Data": row["Data"],

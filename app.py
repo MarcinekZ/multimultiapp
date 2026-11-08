@@ -285,17 +285,12 @@ if df is not None and not df.empty:
   )
 
 
-  def format_top15_list_with_pred(
-      num_list, session_latest_nums, show_ticks, pred_map, prev_session_nums
+  def format_top15_list_strict_pred(
+      num_list, session_latest_nums, show_ticks, scored_predictions
   ):
     res = []
     for n_str in num_list:
-      n_int = int(n_str)
-      is_predicted = False
-      if prev_session_nums and n_int in pred_map:
-        if pred_map[n_int] in prev_session_nums:
-          is_predicted = True
-
+      is_predicted = n_str in scored_predictions
       pred_tick = "🎯" if is_predicted else ""
       hit_tick = "✅" if (show_ticks and n_str in session_latest_nums) else ""
 
@@ -370,31 +365,31 @@ if df is not None and not df.empty:
 
 
   @st.cache_data
-  def get_session_prediction_map(current_zakres, session_time):
+  def get_strict_top_predictions(current_zakres, session_time, candidate_list, prev_session_nums, top_k=3):
     sub_df = df.tail(int(current_zakres))
     sub = sub_df[sub_df["Godzina"] == session_time].reset_index(drop=True)
-    counter_map = defaultdict(Counter)
-    pred_map = {}
+    if len(sub) < 2 or not prev_session_nums:
+      return set()
+
+    transition_scores = defaultdict(int)
     for i in range(1, len(sub)):
-      prev_nums = {
-          int(str(v).replace(".0", "").strip())
-          for k, v in sub.iloc[i - 1].items()
-          if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-      }
-      curr_nums = {
-          int(str(v).replace(".0", "").strip())
-          for k, v in sub.iloc[i].items()
-          if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-      }
+      prev_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i-1].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
+      curr_nums = {int(str(v).replace(".0", "").strip()) for k, v in sub.iloc[i].items() if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()}
       jumpers = prev_nums.intersection(curr_nums)
-      for j in jumpers:
-        for p in prev_nums:
-          if p != j:
-            counter_map[j][p] += 1
-    for j_num, c in counter_map.items():
-      if c:
-        pred_map[j_num] = c.most_common(1)[0][0]
-    return pred_map
+      
+      # Sprawdzamy czy poprzednie liczby z tego kroku pasują do prev_session_nums
+      active_overlap = prev_nums.intersection(prev_session_nums)
+      if active_overlap:
+        for j in jumpers:
+          if f"{j:02d}" in candidate_list:
+            # Liczymy siłę wystąpień powiązanych z poprzednimi liczbami
+            transition_scores[f"{j:02d}"] += len(active_overlap)
+
+    if not transition_scores:
+      return set()
+
+    top_predicted = sorted(transition_scores.keys(), key=lambda x: transition_scores[x], reverse=True)[:top_k]
+    return set(top_predicted)
 
 
   even_14, odd_14 = get_session_top15(zakres, "14:00")
@@ -403,10 +398,6 @@ if df is not None and not df.empty:
   jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
   jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
-  pred_map_14 = get_session_prediction_map(zakres, "14:00")
-  pred_map_22 = get_session_prediction_map(zakres, "22:00")
-
-  # Poprzednie losowania dla danej sesji do predykcji
   prev_nums_14 = set()
   df_14_sub = df[df["Godzina"] == "14:00"]
   if len(df_14_sub) >= 2:
@@ -424,6 +415,13 @@ if df is not None and not df.empty:
         for k, v in df_22_sub.iloc[-2].items()
         if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
     }
+
+  # Ścisłe predykcje Top 3 dla parzystych i nieparzystych osobno
+  pred_even_14 = get_strict_top_predictions(zakres, "14:00", even_14, prev_nums_14, top_k=3)
+  pred_odd_14 = get_strict_top_predictions(zakres, "14:00", odd_14, prev_nums_14, top_k=3)
+
+  pred_even_22 = get_strict_top_predictions(zakres, "22:00", even_22, prev_nums_22, top_k=3)
+  pred_odd_22 = get_strict_top_predictions(zakres, "22:00", odd_22, prev_nums_22, top_k=3)
 
 
   def get_distinct_coupons(session_time, limit, current_zakres):
@@ -518,18 +516,14 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      f"**Top 15 Parzyste (Predykcja 🎯 i Trafienia ✅)** *(Ostatnie losowanie"
-      f" [{last_date_14}] - Trafienia: {hits_14_e}/15)*:"
+      f"**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
+      f" losowanie [{last_date_14}] - Trafienia: {hits_14_e}/15)*:"
       if show_ticks_top15_14
-      else "**Top 15 Parzyste (Predykcja 🎯):**"
+      else "**Top 15 Parzyste (Top 3 Predykcje 🎯):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          even_14,
-          latest_nums_14,
-          show_ticks_top15_14,
-          pred_map_14,
-          prev_nums_14,
+      format_top15_list_strict_pred(
+          even_14, latest_nums_14, show_ticks_top15_14, pred_even_14
       )
       if even_14
       else "Brak danych",
@@ -537,14 +531,14 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      f"**Top 15 Nieparzyste (Predykcja 🎯 i Trafienia ✅)** *(Ostatnie losowanie"
-      f" [{last_date_14}] - Trafienia: {hits_14_o}/15)*:"
+      f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
+      f" losowanie [{last_date_14}] - Trafienia: {hits_14_o}/15)*:"
       if show_ticks_top15_14
-      else "**Top 15 Nieparzyste (Predykcja 🎯):**"
+      else "**Top 15 Nieparzyste (Top 3 Predykcje 🎯):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          odd_14, latest_nums_14, show_ticks_top15_14, pred_map_14, prev_nums_14
+      format_top15_list_strict_pred(
+          odd_14, latest_nums_14, show_ticks_top15_14, pred_odd_14
       )
       if odd_14
       else "Brak danych",
@@ -563,12 +557,8 @@ if df is not None and not df.empty:
       else "**🔥 Top 5 Przeskoków (Sesja 14:00 ➡️ 14:00):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          jumpers_14,
-          latest_nums_14,
-          show_ticks_top15_14,
-          pred_map_14,
-          prev_nums_14,
+      format_top15_list_strict_pred(
+          jumpers_14, latest_nums_14, show_ticks_top15_14, set()
       )
       if jumpers_14
       else "Brak danych",
@@ -677,19 +667,15 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      "**Top 15 Parzyste (Predykcja 🎯 i Trafienia ✅):**"
+      "**Top 15 Parzyste (Top 3 Predykcje 🎯 i Trafienia ✅):**"
       f" *(Ostatnie losowanie [{last_date_22}] - Trafienia:"
       f" {hits_22_e}/15)*:"
       if show_ticks_top15_22
-      else "**Top 15 Parzyste (Predykcja 🎯):**"
+      else "**Top 15 Parzyste (Top 3 Predykcje 🎯):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          even_22,
-          latest_nums_22,
-          show_ticks_top15_22,
-          pred_map_22,
-          prev_nums_22,
+      format_top15_list_strict_pred(
+          even_22, latest_nums_22, show_ticks_top15_22, pred_even_22
       )
       if even_22
       else "Brak danych",
@@ -697,14 +683,14 @@ if df is not None and not df.empty:
   )
 
   st.markdown(
-      f"**Top 15 Nieparzyste (Predykcja 🎯 i Trafienia ✅)** *(Ostatnie losowanie"
-      f" [{last_date_22}] - Trafienia: {hits_22_o}/15)*:"
+      f"**Top 15 Nieparzyste (Top 3 Predykcje 🎯 i Trafienia ✅)** *(Ostatnie"
+      f" losowanie [{last_date_22}] - Trafienia: {hits_22_o}/15)*:"
       if show_ticks_top15_22
-      else "**Top 15 Nieparzyste (Predykcja 🎯):**"
+      else "**Top 15 Nieparzyste (Top 3 Predykcje 🎯):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          odd_22, latest_nums_22, show_ticks_top15_22, pred_map_22, prev_nums_22
+      format_top15_list_strict_pred(
+          odd_22, latest_nums_22, show_ticks_top15_22, pred_odd_22
       )
       if odd_22
       else "Brak danych",
@@ -723,12 +709,8 @@ if df is not None and not df.empty:
       else "**🔥 Top 5 Przeskoków (Sesja 22:00 ➡️ 22:00):**"
   )
   st.code(
-      format_top15_list_with_pred(
-          jumpers_22,
-          latest_nums_22,
-          show_ticks_top15_22,
-          pred_map_22,
-          prev_nums_22,
+      format_top15_list_strict_pred(
+          jumpers_22, latest_nums_22, show_ticks_top15_22, set()
       )
       if jumpers_22
       else "Brak danych",
@@ -830,48 +812,8 @@ if df is not None and not df.empty:
       else f"Losowanie #{last_id_22} ({last_date_22} 22:00)"
   )
   st.caption(
-      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – sugerowana predykcja | **☀️✅ / 🌙✅** – trafienie."
+      f"Top 15 skoczków w dwóch czytelnych rzędach. Znak **🎯** – predykcja | **☀️✅ / 🌙✅** – trafienie."
   )
-
-  @st.cache_data
-  def get_prediction_map(current_zakres):
-    sub_df = df.tail(int(current_zakres))
-    pred_map = {}
-    for session_time in ["14:00", "22:00"]:
-      sub = sub_df[sub_df["Godzina"] == session_time].reset_index(drop=True)
-      counter_map = defaultdict(Counter)
-      for i in range(1, len(sub)):
-        prev_nums = {
-            int(str(v).replace(".0", "").strip())
-            for k, v in sub.iloc[i - 1].items()
-            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-        }
-        curr_nums = {
-            int(str(v).replace(".0", "").strip())
-            for k, v in sub.iloc[i].items()
-            if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-        }
-        jumpers = prev_nums.intersection(curr_nums)
-        for j in jumpers:
-          for p in prev_nums:
-            if p != j:
-              counter_map[j][p] += 1
-      for j_num, c in counter_map.items():
-        if c:
-          most_common_pred = c.most_common(1)[0][0]
-          pred_map[(session_time, j_num)] = most_common_pred
-    return pred_map
-
-  pred_map_combined = get_prediction_map(zakres)
-
-  prev_overall_nums = set()
-  if len(df) >= 2:
-    prev_row = df.iloc[-2]
-    prev_overall_nums = {
-        int(str(v).replace(".0", "").strip())
-        for k, v in prev_row.items()
-        if str(k).startswith("L") and pd.notna(v) and str(v).strip().isdigit()
-    }
 
   j14_list = get_session_top_jumpers(zakres, "14:00", 20)
   j22_list = get_session_top_jumpers(zakres, "22:00", 20)
@@ -896,19 +838,10 @@ if df is not None and not df.empty:
 
   common_items = []
   for n_str in top_15_combined:
-    n_int = int(n_str)
-    is_predicted = False
-    if prev_overall_nums:
-      # Sprawdzamy czy poprz. numer pasuje do predykcji dla skoczka w którejkolwiek sesji
-      if pred_map_combined.get(("14:00", n_int)) in prev_overall_nums or pred_map_combined.get(("22:00", n_int)) in prev_overall_nums:
-        is_predicted = True
-
-    pred_tick = "🎯" if is_predicted else ""
     hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
     hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
     ticks_str = f"[{hit_14}{hit_22}]" if (hit_14 or hit_22) else ""
-    
-    common_items.append(f"**{n_str}**{pred_tick}{ticks_str}")
+    common_items.append(f"**{n_str}**{ticks_str}")
 
   line1_items = common_items[:8]
   line2_items = common_items[8:]
@@ -916,7 +849,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line1_items))
   st.markdown("   ".join(line2_items))
   
-  st.markdown("Legenda: **🎯** – predykcja (gdy główny #1 poprzednik wystąpił w poprzednim losowaniu) | **☀️✅ / 🌙✅** – trafienie.")
+  st.markdown("Legenda: **☀️✅ / 🌙✅** – faktyczne trafienie w sesjach.")
 
   st.divider()
 
@@ -981,7 +914,7 @@ if df is not None and not df.empty:
     nums = [
         f"{int(str(v).replace('.0', '').strip()):02d}"
         if str(v).replace(".0", "").strip().isdigit()
-        else str(v).replace(".0", "").strip()
+        else str(v).replace('.0', '').strip()
         for v in row.iloc[3:].values
         if pd.notna(val) and str(val).strip()
     ]

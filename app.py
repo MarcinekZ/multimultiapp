@@ -272,6 +272,9 @@ if df is not None and not df.empty:
   latest_id = str(latest_overall["ID"]).strip()
   latest_date = str(latest_overall["Data"]).strip()
   latest_hour = str(latest_overall["Godzina"]).strip()
+  latest_overall_nums = {
+      f"{int(v):02d}" if v.isdigit() else v for v in get_row_numbers(latest_overall)
+  }
 
   show_ticks_top15_14 = True if latest_nums_14 else False
   show_ticks_top15_22 = True if latest_nums_22 else False
@@ -456,15 +459,17 @@ if df is not None and not df.empty:
         int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
     }
 
-  # Baza międzysesyjna oparta na poprawnym poprzedniku (przedostatnim wierszu) do weryfikacji ostatniego
+  # Poprzednik bazowy (np. #17135) i jego godzina
   prev_cross_nums = set()
   prev_cross_list = []
   prev_cross_id = ""
   prev_cross_date = ""
   prev_cross_hour = ""
+  target_cross_nums = set()
+  target_cross_label = ""
 
   if len(df) >= 2:
-    prev_row_cross = df.iloc[-2]  # Poprzednik bazowy (np. #17134)
+    prev_row_cross = df.iloc[-2]  # Baza (np. #17135)
     prev_cross_id = str(prev_row_cross["ID"]).strip()
     prev_cross_date = str(prev_row_cross["Data"]).strip()
     prev_cross_hour = str(prev_row_cross["Godzina"]).strip()
@@ -474,6 +479,17 @@ if df is not None and not df.empty:
     prev_cross_list = sorted(
         [f"{int(v):02d}" for v in get_row_numbers(prev_row_cross) if v.isdigit()],
         key=lambda x: int(x),
+    )
+
+    # Docelowe losowanie (najnowsze, czyli iloc[-1]) do sprawdzenia trafień międzysesyjnych
+    target_row_cross = df.iloc[-1]
+    target_cross_nums = {
+        f"{int(v):02d}" if v.isdigit() else v
+        for v in get_row_numbers(target_row_cross)
+    }
+    target_cross_label = (
+        f"#{target_row_cross['ID']} ({target_row_cross['Data']}"
+        f" | ⏰ {target_row_cross['Godzina']})"
     )
 
 
@@ -873,9 +889,9 @@ if df is not None and not df.empty:
   # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW MIĘDZYSESYJNYCH (14:00 ⇄ 22:00) Z MAPOWANIEM ŹRÓDEŁ ---
   st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 5 Predykcje 🎯)")
   st.markdown(
-      f"Baza przejść (wykorzystane poprzednie losowanie **#{prev_cross_id}** z dnia"
-      f" **{prev_cross_date}** o godzinie **{prev_cross_hour}** do oceny"
-      f" bieżącego stanu):"
+      f"Baza przejść międzysesyjnych: bazujemy na losowaniu **#{prev_cross_id}**"
+      f" ({prev_cross_date} | ⏰ {prev_cross_hour}), a trafienia weryfikujemy"
+      f" w bieżącym losowaniu docelowym **{target_cross_label}**:"
   )
 
   if prev_cross_list:
@@ -914,20 +930,16 @@ if df is not None and not df.empty:
 
   st.caption(
       "Top 15 skoczków międzysesyjnych. Znak **🎯** – dokładnie 5 predykcji |"
-      " **☀️✅ / 🌙✅** – trafienia."
+      " **✅** – trafienie w bieżącym losowaniu docelowym."
   )
 
   cross_items = []
   for n_str in top_15_cross:
     is_predicted = n_str in pred_cross
     pred_tick = "🎯" if is_predicted else ""
-    hit_14 = "☀️✅" if (show_ticks_top15_14 and n_str in latest_nums_14) else ""
-    hit_22 = "🌙✅" if (show_ticks_top15_22 and n_str in latest_nums_22) else ""
-    ticks_str = (
-        f"[{pred_tick}{hit_14}{hit_22}]"
-        if (pred_tick or hit_14 or hit_22)
-        else ""
-    )
+    # Weryfikacja trafienia wyłącznie w docelowym najnowszym losowaniu (target_cross_nums)
+    hit_tick = "✅" if (target_cross_nums and n_str in target_cross_nums) else ""
+    ticks_str = f"[{pred_tick}{hit_tick}]" if (pred_tick or hit_tick) else ""
 
     cross_items.append(f"**{n_str}**{ticks_str}")
 
@@ -939,8 +951,8 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line2_cross))
 
   st.markdown(
-      "Legenda: **🎯** – predykcja międzysesyjna (Top 5) | **☀️✅ / 🌙✅** –"
-      " faktyczne trafienie."
+      "Legenda: **🎯** – predykcja międzysesyjna (Top 5) | **✅** – trafienie"
+      " w docelowym losowaniu."
   )
 
   st.divider()
@@ -989,7 +1001,7 @@ if df is not None and not df.empty:
   st.code(
       "\n".join(triplets_display)
       if triplets_display
-      else "Za mało danych в zakresie",
+      else "Za mało danych w zakresie",
       language=None,
   )
 

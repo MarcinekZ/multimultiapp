@@ -381,7 +381,7 @@ if df is not None and not df.empty:
 
   @st.cache_data
   def get_cross_session_strict_predictions_with_sources(
-      current_zakres, candidate_list, prev_session_nums, top_k=5
+      current_zakres, candidate_list, prev_session_nums, top_k=10
   ):
     sub = df.tail(int(current_zakres)).reset_index(drop=True)
     if len(sub) < 2 or not prev_session_nums:
@@ -459,7 +459,6 @@ if df is not None and not df.empty:
         int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
     }
 
-  # Używamy najnowszego zakończonego losowania (df.iloc[-1], np. #17136 o 14:00) jako aktualnej bazy do prognoz na kolejną sesję
   prev_cross_nums = set()
   prev_cross_list = []
   prev_cross_id = ""
@@ -467,7 +466,7 @@ if df is not None and not df.empty:
   prev_cross_hour = ""
 
   if len(df) >= 1:
-    prev_row_cross = df.iloc[-1]  # Aktualnie najnowsze losowanie (#17136, 14:00)
+    prev_row_cross = df.iloc[-1]
     prev_cross_id = str(prev_row_cross["ID"]).strip()
     prev_cross_date = str(prev_row_cross["Data"]).strip()
     prev_cross_hour = str(prev_row_cross["Godzina"]).strip()
@@ -873,12 +872,12 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW MIĘDZYSESYJNYCH (14:00 ⇄ 22:00) Z MAPOWANIEM ŹRÓDEŁ ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 5 Predykcje 🎯)")
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z 10 PREDYKCJAMI ---
+  st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 10 Predykcji 🎯)")
   st.markdown(
       f"Baza przejść międzysesyjnych: bazujemy na najnowszym zakończonym losowaniu"
       f" **#{prev_cross_id}** ({prev_cross_date} | ⏰ {prev_cross_hour}),"
-      f" prognozując liczby na nadchodzącą sesję wieczorną:"
+      f" prognozując 10 predykcji spośród 15 skoczków na nadchodzącą sesję wieczorną:"
   )
 
   if prev_cross_list:
@@ -901,7 +900,7 @@ if df is not None and not df.empty:
 
   pred_cross, source_mapping = (
       get_cross_session_strict_predictions_with_sources(
-          zakres, top_15_cross, prev_cross_nums, top_k=5
+          zakres, top_15_cross, prev_cross_nums, top_k=10
       )
   )
 
@@ -916,7 +915,7 @@ if df is not None and not df.empty:
     )
 
   st.caption(
-      "Top 15 skoczków międzysesyjnych. Znak **🎯** – dokładnie 5 predykcji"
+      "Top 15 skoczków międzysesyjnych. Znak **🎯** – dokładnie 10 predykcji"
       " na nadchodzące losowanie."
   )
 
@@ -936,7 +935,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line2_cross))
 
   st.markdown(
-      "Legenda: **🎯** – predykcja międzysesyjna (Top 5) na nadchodzącą sesję."
+      "Legenda: **🎯** – predykcja międzysesyjna (10 typów) na nadchodzącą sesję."
   )
 
   st.divider()

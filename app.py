@@ -459,14 +459,19 @@ if df is not None and not df.empty:
         int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
     }
 
+  # --- POPRAWKA: BAZA TO PRZEDOSTATNIE LOSOWANIE (np. 14:00), A CEL TO NAJNOWSZE (np. 22:00) DO WERYFIKACJI ---
   prev_cross_nums = set()
   prev_cross_list = []
   prev_cross_id = ""
   prev_cross_date = ""
   prev_cross_hour = ""
+  target_cross_nums = set()
+  target_cross_id = ""
 
-  if len(df) >= 1:
-    prev_row_cross = df.iloc[-1]
+  if len(df) >= 2:
+    prev_row_cross = df.iloc[-2]  # Poprzednie losowanie (baza źródłowa)
+    target_row_cross = df.iloc[-1]  # Najnowsze ukończone losowanie (cel do weryfikacji trafień)
+
     prev_cross_id = str(prev_row_cross["ID"]).strip()
     prev_cross_date = str(prev_row_cross["Data"]).strip()
     prev_cross_hour = str(prev_row_cross["Godzina"]).strip()
@@ -477,6 +482,11 @@ if df is not None and not df.empty:
         [f"{int(v):02d}" for v in get_row_numbers(prev_row_cross) if v.isdigit()],
         key=lambda x: int(x),
     )
+
+    target_cross_id = str(target_row_cross["ID"]).strip()
+    target_cross_nums = {
+        f"{int(v):02d}" if v.isdigit() else v for v in get_row_numbers(target_row_cross)
+    }
 
 
   def get_distinct_coupons(session_time, limit, current_zakres):
@@ -872,12 +882,12 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z 9 PREDYKCJAMI ---
+  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z 9 PREDYKCJAMI I TRAFIENIAMI ✅ ---
   st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 9 Predykcji 🎯)")
   st.markdown(
-      f"Baza przejść międzysesyjnych: bazujemy na najnowszym zakończonym losowaniu"
-      f" **#{prev_cross_id}** ({prev_cross_date} | ⏰ {prev_cross_hour}),"
-      f" prognozując 9 predykcji spośród 15 skoczków na nadchodzącą sesję wieczorną:"
+      f"Baza przejść międzysesyjnych: bazujemy na losowaniu **#{prev_cross_id}**"
+      f" ({prev_cross_date} | ⏰ {prev_cross_hour}), a trafienia weryfikujemy w"
+      f" zakończonym losowaniu docelowym **#{target_cross_id}**:"
   )
 
   if prev_cross_list:
@@ -914,18 +924,27 @@ if df is not None and not df.empty:
         + " | ".join(mapping_str_parts)
     )
 
+  # Obliczanie liczby trafień spośród 15 skoczków oraz spośród 9 predykcji w docelowym losowaniu
+  hits_cross_total = sum(1 for n in top_15_cross if n in target_cross_nums)
+  hits_pred_total = sum(1 for n in pred_cross if n in target_cross_nums)
+
   st.caption(
-      "Top 15 skoczków międzysesyjnych. Znak **🎯** – dokładnie 9 predykcji"
-      " na nadchodzące losowanie."
+      f"Top 15 skoczków międzysesyjnych. Trafienia ogólne: {hits_cross_total}/15 | Trafione predykcie (🎯): {hits_pred_total}/9"
   )
 
   cross_items = []
   for n_str in top_15_cross:
     is_predicted = n_str in pred_cross
-    pred_tick = "🎯" if is_predicted else ""
-    ticks_str = f"[{pred_tick}]" if pred_tick else ""
+    is_hit = n_str in target_cross_nums
 
-    cross_items.append(f"**{n_str}**{ticks_str}")
+    pred_tick = "🎯" if is_predicted else ""
+    hit_tick = "✅" if is_hit else ""
+
+    combined_suffix = ""
+    if pred_tick or hit_tick:
+      combined_suffix = f"[{pred_tick}{hit_tick}]"
+
+    cross_items.append(f"**{n_str}**{combined_suffix}")
 
   mid_c = len(cross_items) // 2
   line1_cross = cross_items[:mid_c]
@@ -935,7 +954,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line2_cross))
 
   st.markdown(
-      "Legenda: **🎯** – predykcja międzysesyjna (9 typów) na nadchodzącą sesję."
+      "Legenda: **🎯** – predykcja międzysesyjna (9 typów) | **✅** – trafienie w zakończonym losowaniu."
   )
 
   st.divider()

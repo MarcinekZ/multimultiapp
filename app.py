@@ -459,7 +459,6 @@ if df is not None and not df.empty:
         int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
     }
 
-  # --- POPRAWKA: BAZA TO PRZEDOSTATNIE LOSOWANIE (np. 14:00), A CEL TO NAJNOWSZE (np. 22:00) DO WERYFIKACJI ---
   prev_cross_nums = set()
   prev_cross_list = []
   prev_cross_id = ""
@@ -469,8 +468,8 @@ if df is not None and not df.empty:
   target_cross_id = ""
 
   if len(df) >= 2:
-    prev_row_cross = df.iloc[-2]  # Poprzednie losowanie (baza źródłowa)
-    target_row_cross = df.iloc[-1]  # Najnowsze ukończone losowanie (cel do weryfikacji trafień)
+    prev_row_cross = df.iloc[-2]
+    target_row_cross = df.iloc[-1]
 
     prev_cross_id = str(prev_row_cross["ID"]).strip()
     prev_cross_date = str(prev_row_cross["Data"]).strip()
@@ -882,8 +881,8 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. TOP 15 WSPÓLNYCH SKOCZKÓW Z 9 PREDYKCJAMI I TRAFIENIAMI ✅ ---
-  st.subheader("🔥 Top 15 Wspólnych Skoczków Międzysesyjnych (Top 9 Predykcji 🎯)")
+  # --- 5. ROZDZIELONE SEKCJE: PREDYKCJE (🎯) ORAZ TOP 15 SKOCZKÓW (✅) ---
+  st.subheader("🔥 Top Skoczkowie Międzysesyjni & Predykcje")
   st.markdown(
       f"Baza przejść międzysesyjnych: bazujemy na losowaniu **#{prev_cross_id}**"
       f" ({prev_cross_date} | ⏰ {prev_cross_hour}), a trafienia weryfikujemy w"
@@ -924,27 +923,30 @@ if df is not None and not df.empty:
         + " | ".join(mapping_str_parts)
     )
 
-  # Obliczanie liczby trafień spośród 15 skoczków oraz spośród 9 predykcji w docelowym losowaniu
   hits_cross_total = sum(1 for n in top_15_cross if n in target_cross_nums)
   hits_pred_total = sum(1 for n in pred_cross if n in target_cross_nums)
 
-  st.caption(
-      f"Top 15 skoczków międzysesyjnych. Trafienia ogólne: {hits_cross_total}/15 | Trafione predykcie (🎯): {hits_pred_total}/9"
-  )
+  st.markdown("---")
 
+  # --- LISTA 1: TOP 9 PREDYKCJI ---
+  st.markdown(f"🎯 **Top 9 Predykcji Międzysesyjnych** *(Trafione: {hits_pred_total}/9)*:")
+  pred_sorted_list = sorted(list(pred_cross), key=lambda x: int(x))
+  pred_items = []
+  for n_str in pred_sorted_list:
+    is_hit = n_str in target_cross_nums
+    hit_tick = "✅" if is_hit else ""
+    pred_items.append(f"**{n_str}**[{hit_tick}]" if hit_tick else f"**{n_str}**")
+  st.markdown("   ".join(pred_items))
+
+  st.markdown("")
+
+  # --- LISTA 2: TOP 15 WSPÓLNYCH SKOCZKÓW ---
+  st.markdown(f"🔥 **Top 15 Wspólnych Skoczków** *(Trafienia ogólne: {hits_cross_total}/15)*:")
   cross_items = []
   for n_str in top_15_cross:
-    is_predicted = n_str in pred_cross
     is_hit = n_str in target_cross_nums
-
-    pred_tick = "🎯" if is_predicted else ""
     hit_tick = "✅" if is_hit else ""
-
-    combined_suffix = ""
-    if pred_tick or hit_tick:
-      combined_suffix = f"[{pred_tick}{hit_tick}]"
-
-    cross_items.append(f"**{n_str}**{combined_suffix}")
+    cross_items.append(f"**{n_str}**[{hit_tick}]" if hit_tick else f"**{n_str}**")
 
   mid_c = len(cross_items) // 2
   line1_cross = cross_items[:mid_c]
@@ -954,7 +956,7 @@ if df is not None and not df.empty:
   st.markdown("   ".join(line2_cross))
 
   st.markdown(
-      "Legenda: **🎯** – predykcja międzysesyjna (9 typów) | **✅** – trafienie w zakończonym losowaniu."
+      "Legenda: **🎯** – predykcja w tekście przypisań | **✅** – trafienie w zakończonym losowaniu."
   )
 
   st.divider()

@@ -73,19 +73,17 @@ def load_data():
         df["ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     )
 
-
   def clean_hour(val):
     s = str(val).strip()
     try:
       if ":" in s:
         h = int(s.split(":")[0])
         return "14:00" if h < 18 else "22:00"
-    except:
+    except Exception:
       pass
     if "22" in s or "21" in s or "20" in s or "19" in s:
       return "22:00"
     return "14:00"
-
 
   if "Godzina" in df.columns:
     df["Godzina"] = df["Godzina"].apply(clean_hour)
@@ -136,17 +134,47 @@ if df is not None and not df.empty:
   st.sidebar.success(f"🟢 Baza aktywna (Łącznie losowań: {len(df)})")
   total_draws = len(df)
 
-
   def get_row_numbers(row):
     nums = []
     for i in range(1, 21):
       val = row.get(f"L{i}")
       if pd.notna(val) and str(val).strip():
         cleaned_v = str(val).replace(".0", "").strip()
-        if cleaned_v:
-          nums.append(cleaned_v)
+        if cleaned_v and cleaned_v.isdigit():
+          n_int = int(cleaned_v)
+          if 1 <= n_int <= 80:
+            nums.append(str(n_int))
     return nums
 
+  # --- STAŁE STATYSTYCZNE Z ANALIZY 17 144 LOSOWAŃ ---
+  TOP_ENDINGS = {5, 3, 7}        # Najczęstsze końcówki ogółem (>35 700 trafień)
+  JUMPER_ENDINGS = {3, 8, 9, 5}  # Końcówki najczęściej powtarzających się skoczków
+
+  CLUSTER_PARTNERS = {
+      5: ["35", "65", "05"],
+      3: ["13", "43", "23"],
+      7: ["37", "67", "47"],
+      8: ["08", "18", "48"],
+      2: ["22", "52", "62"],
+      0: ["10", "20", "70"],
+      9: ["19", "39", "49"],
+      6: ["16", "36", "76"],
+      4: ["14", "34", "74"],
+      1: ["11", "31", "61"],
+  }
+
+  # Najsilniejsze historyczne przejścia międzysesyjne (baza -> cel)
+  STRONG_TRANSITIONS_14_TO_22 = {
+      74: [52, 63],
+      18: [65, 13],
+      43: [13],
+  }
+  STRONG_TRANSITIONS_22_TO_14 = {
+      13: [18, 43],
+      12: [18],
+      65: [64],
+      5: [15],
+  }
 
   # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
@@ -168,16 +196,12 @@ if df is not None and not df.empty:
     date_str = curr["Data"]
     time_str = curr["Godzina"]
 
-    st.markdown(
-        f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}"
-    )
+    st.markdown(f"**Losowanie #{draw_id}** | 📅 {date_str} | ⏰ {time_str}")
 
     formatted_display = []
     for val_clean in curr_nums:
-      val_str = f"{int(val_clean):02d}" if val_clean.isdigit() else val_clean
-      if val_clean in repeated or (
-          val_clean.isdigit() and str(int(val_clean)) in repeated
-      ):
+      val_str = f"{int(val_clean):02d}"
+      if val_clean in repeated:
         formatted_display.append(f"🔄{val_str}")
       else:
         formatted_display.append(f"{val_str}")
@@ -189,7 +213,57 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. USTAWIENIA ANALIZY / SUWAK ---
+  # --- 2. RADAR KOŃCÓWEK I PUSTYCH KOŃCÓWEK (ODBICIE 91.23%) ---
+  st.subheader("🧲 Radar Końcówek i Zjawisko „Pustej Końcówki”")
+
+  latest_overall = df.iloc[-1]
+  latest_id = str(latest_overall["ID"]).strip()
+  latest_date = str(latest_overall["Data"]).strip()
+  latest_hour = str(latest_overall["Godzina"]).strip()
+  latest_overall_nums_int = [int(v) for v in get_row_numbers(latest_overall)]
+  latest_overall_nums = {f"{n:02d}" for n in latest_overall_nums_int}
+
+  present_endings = {n % 10 for n in latest_overall_nums_int}
+  missing_endings = sorted(list(set(range(10)) - present_endings))
+
+  ending_counts_latest = Counter(n % 10 for n in latest_overall_nums_int)
+  dominant_endings = [
+      f"końcówka **{end}** ({cnt} szt.)"
+      for end, cnt in ending_counts_latest.most_common(3)
+      if cnt >= 3
+  ]
+
+  col_rad1, col_rad2 = st.columns(2)
+  with col_rad1:
+    if missing_endings:
+      missing_str = ", ".join([f"**{e}**" for e in missing_endings])
+      st.info(
+          f"🚨 **Brakujące końcówki w #{latest_id} ({latest_hour}):** {missing_str}\n\n"
+          f"Statystyka bazy (17 144 losowań): gdy końcówka nie padnie wcale (0 szt.), "
+          f"w kolejnym losowaniu odbija z prawdopodobieństwem **91,23%** (średnio **2,01 liczby**)."
+      )
+      rebound_picks = []
+      for me in missing_endings:
+        rebound_picks.extend(CLUSTER_PARTNERS.get(me, []))
+      st.markdown(
+          f"🎯 **Typy na odbicie pustej końcówki:** :red[**{'  '.join(rebound_picks)}**]"
+      )
+    else:
+      st.success(
+          f"✅ W losowaniu **#{latest_id} ({latest_hour})** padły wszystkie 10 końcówek (0–9)."
+      )
+
+  with col_rad2:
+    dom_text = ", ".join(dominant_endings) if dominant_endings else "rozkład równomierny"
+    st.warning(
+        f"📊 **Dominacja końcówek w #{latest_id}:** {dom_text}\n\n"
+        f"🏆 **Liderzy całej bazy:** końcówki **5** (35 726x), **3** (35 718x), **7** (35 703x).\n"
+        f"🦘 **Najlepsi skoczkowie 1:1:** końcówki **3** (8 775x) oraz **8** (8 633x)."
+    )
+
+  st.divider()
+
+  # --- 3. USTAWIENIA ANALIZY / SUWAK ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej")
 
   preset_steps = [1, 5, 10, 15, 20, 30, 40, 50, 100, 200, total_draws]
@@ -233,11 +307,18 @@ if df is not None and not df.empty:
         label_visibility="collapsed",
     )
 
-  st.write(
-      f"Wybrany zakres bazy do analizy: **{zakres}**"
-      f" {'losowań' if zakres < total_draws else '(Wszystkie losowania)'}"
-  )
-  df_analyzed = df.tail(int(zakres))
+  col_opt1, col_opt2 = st.columns([2, 2])
+  with col_opt1:
+    st.write(
+        f"Wybrany zakres bazy do analizy: **{zakres}**"
+        f" {'losowań' if zakres < total_draws else '(Wszystkie losowania)'}"
+    )
+  with col_opt2:
+    prioritize_top_endings = st.toggle(
+        "🔥 Priorytetyzuj Top Końcówki (5, 3, 7) oraz Odbicia w zestawach",
+        value=True,
+        key="prio_endings",
+    )
 
   st.divider()
 
@@ -251,10 +332,7 @@ if df is not None and not df.empty:
     latest_draw_14 = df_14_all.iloc[-1]
     last_id_14 = str(latest_draw_14["ID"]).strip()
     last_date_14 = str(latest_draw_14["Data"]).strip()
-    latest_nums_14 = {
-        f"{int(v):02d}" if v.isdigit() else v
-        for v in get_row_numbers(latest_draw_14)
-    }
+    latest_nums_14 = {f"{int(v):02d}" for v in get_row_numbers(latest_draw_14)}
 
   latest_nums_22 = set()
   last_id_22 = ""
@@ -263,29 +341,12 @@ if df is not None and not df.empty:
     latest_draw_22 = df_22_all.iloc[-1]
     last_id_22 = str(latest_draw_22["ID"]).strip()
     last_date_22 = str(latest_draw_22["Data"]).strip()
-    latest_nums_22 = {
-        f"{int(v):02d}" if v.isdigit() else v
-        for v in get_row_numbers(latest_draw_22)
-    }
+    latest_nums_22 = {f"{int(v):02d}" for v in get_row_numbers(latest_draw_22)}
 
-  latest_overall = df.iloc[-1]
-  latest_id = str(latest_overall["ID"]).strip()
-  latest_date = str(latest_overall["Data"]).strip()
-  latest_hour = str(latest_overall["Godzina"]).strip()
-  latest_overall_nums = {
-      f"{int(v):02d}" if v.isdigit() else v for v in get_row_numbers(latest_overall)
-  }
-
-  show_ticks_top15_14 = True if latest_nums_14 else False
-  show_ticks_top15_22 = True if latest_nums_22 else False
-
-  show_ticks_coupon_14 = (
-      True if latest_nums_14 and latest_hour == "14:00" else False
-  )
-  show_ticks_coupon_22 = (
-      True if latest_nums_22 and latest_hour == "22:00" else False
-  )
-
+  show_ticks_top15_14 = bool(latest_nums_14)
+  show_ticks_top15_22 = bool(latest_nums_22)
+  show_ticks_coupon_14 = bool(latest_nums_14 and latest_hour == "14:00")
+  show_ticks_coupon_22 = bool(latest_nums_22 and latest_hour == "22:00")
 
   def format_top15_list_strict_pred(
       num_list, session_latest_nums, show_ticks, scored_predictions
@@ -308,19 +369,15 @@ if df is not None and not df.empty:
       return f"{line1}\n{line2}"
     return " ".join(res)
 
-
   def format_coupon_list(num_list, session_latest_nums, show_ticks):
     res = []
     for n in num_list:
-      n_clean = (
-          f"{int(n):02d}" if str(n).replace(".0", "").isdigit() else str(n)
-      )
+      n_clean = f"{int(n):02d}" if str(n).isdigit() else str(n)
       if show_ticks and n_clean in session_latest_nums:
         res.append(f"{n_clean}✅")
       else:
         res.append(f"{n_clean}")
     return " ".join(res)
-
 
   @st.cache_data
   def get_session_top15(current_zakres, session_time):
@@ -331,22 +388,16 @@ if df is not None and not df.empty:
     all_session_nums = []
     for _, row in df_session.iterrows():
       for val in get_row_numbers(row):
-        if val.isdigit():
-          all_session_nums.append(f"{int(val):02d}")
+        all_session_nums.append(f"{int(val):02d}")
 
     counts = pd.Series(all_session_nums).value_counts()
-    even_counts = counts[
-        counts.index.map(lambda x: int(x) % 2 == 0 if x.isdigit() else False)
-    ]
-    odd_counts = counts[
-        counts.index.map(lambda x: int(x) % 2 != 0 if x.isdigit() else False)
-    ]
+    even_counts = counts[counts.index.map(lambda x: int(x) % 2 == 0)]
+    odd_counts = counts[counts.index.map(lambda x: int(x) % 2 != 0)]
 
     even_sorted = sorted(even_counts.head(15).index.tolist(), key=lambda x: int(x))
     odd_sorted = sorted(odd_counts.head(15).index.tolist(), key=lambda x: int(x))
 
     return even_sorted, odd_sorted
-
 
   @st.cache_data
   def get_session_top_jumpers(current_zakres, session_time, top_n=5):
@@ -356,44 +407,50 @@ if df is not None and not df.empty:
       return []
     counter = Counter()
     for i in range(1, len(sub)):
-      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
-      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
       for n in prev_nums.intersection(curr_nums):
-        counter[n] += 1
+        # Bonus statystyczny dla końcówek skoczków (3, 8, 9, 5)
+        weight = 1.15 if (n % 10) in JUMPER_ENDINGS else 1.0
+        counter[n] += weight
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
     return sorted(top_j, key=lambda x: int(x))
 
-
   @st.cache_data
-  def get_cross_session_top_jumpers(current_zakres, top_n=5):
+  def get_cross_session_top_jumpers(current_zakres, top_n=15):
     sub = df.tail(int(current_zakres)).reset_index(drop=True)
     if len(sub) < 2:
       return []
     counter = Counter()
     for i in range(1, len(sub)):
-      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
-      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
       for n in prev_nums.intersection(curr_nums):
-        counter[n] += 1
+        weight = 1.2 if (n % 10) in JUMPER_ENDINGS else 1.0
+        counter[n] += weight
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
     return sorted(top_j, key=lambda x: int(x))
 
-
   @st.cache_data
   def get_cross_session_strict_predictions_with_sources(
-      current_zakres, candidate_list, prev_session_nums, top_k=9
+      current_zakres,
+      candidate_list,
+      prev_session_nums,
+      base_hour="14:00",
+      missing_ends=(),
+      top_k=9,
   ):
     sub = df.tail(int(current_zakres)).reset_index(drop=True)
     if len(sub) < 2 or not prev_session_nums:
       return set(), {}
 
-    transition_scores = defaultdict(int)
+    transition_scores = defaultdict(float)
     mapping_sources = {}
 
     jumper_source_counter = defaultdict(Counter)
     for i in range(1, len(sub)):
-      p_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
-      c_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
+      p_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      c_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
       jumpers = p_nums.intersection(c_nums)
       for j in jumpers:
         for p in p_nums:
@@ -401,15 +458,39 @@ if df is not None and not df.empty:
             jumper_source_counter[j][p] += 1
 
     for i in range(1, len(sub)):
-      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1]) if v.isdigit()}
-      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i]) if v.isdigit()}
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
       jumpers = prev_nums.intersection(curr_nums)
 
       active_overlap = prev_nums.intersection(prev_session_nums)
       if active_overlap:
         for j in jumpers:
-          if f"{j:02d}" in candidate_list:
-            transition_scores[f"{j:02d}"] += len(active_overlap)
+          j_str = f"{j:02d}"
+          if j_str in candidate_list:
+            score = float(len(active_overlap))
+            # Bonus za topowe końcówki (5, 3, 7) oraz końcówki skoczków (3, 8)
+            if (j % 10) in TOP_ENDINGS:
+              score *= 1.15
+            if (j % 10) in JUMPER_ENDINGS:
+              score *= 1.10
+            # Bonus za odbicie brakującej końcówki (91.23%)
+            if (j % 10) in missing_ends:
+              score *= 1.25
+            transition_scores[j_str] += score
+
+    # Dodatkowy bonus za silne przejścia historyczne (14:00->22:00 lub 22:00->14:00)
+    strong_map = (
+        STRONG_TRANSITIONS_14_TO_22
+        if base_hour == "14:00"
+        else STRONG_TRANSITIONS_22_TO_14
+    )
+    for src_num in prev_session_nums:
+      if src_num in strong_map:
+        for target_num in strong_map[src_num]:
+          t_str = f"{target_num:02d}"
+          if t_str in candidate_list:
+            transition_scores[t_str] += 2.5
+            mapping_sources[t_str] = f"{src_num:02d} (silna para)"
 
     if not transition_scores:
       return set(), {}
@@ -420,6 +501,8 @@ if df is not None and not df.empty:
     top_predicted_list = [item[0] for item in sorted_items[:top_k]]
 
     for pred_str in top_predicted_list:
+      if pred_str in mapping_sources:
+        continue
       p_int = int(pred_str)
       if p_int in jumper_source_counter:
         possible_sources = jumper_source_counter[p_int]
@@ -438,7 +521,6 @@ if df is not None and not df.empty:
 
     return set(top_predicted_list), mapping_sources
 
-
   even_14, odd_14 = get_session_top15(zakres, "14:00")
   even_22, odd_22 = get_session_top15(zakres, "22:00")
 
@@ -448,51 +530,30 @@ if df is not None and not df.empty:
   prev_nums_14 = set()
   df_14_sub = df[df["Godzina"] == "14:00"]
   if len(df_14_sub) >= 2:
-    prev_nums_14 = {
-        int(v) for v in get_row_numbers(df_14_sub.iloc[-2]) if v.isdigit()
-    }
+    prev_nums_14 = {int(v) for v in get_row_numbers(df_14_sub.iloc[-2])}
 
   prev_nums_22 = set()
   df_22_sub = df[df["Godzina"] == "22:00"]
   if len(df_22_sub) >= 2:
-    prev_nums_22 = {
-        int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
-    }
+    prev_nums_22 = {int(v) for v in get_row_numbers(df_22_sub.iloc[-2])}
 
-  # --- DUAL ALIGNMENT: 
-  # 1. Weryfikacja trafień dla ostatnio zakończonego losowania (target_row_cross) bazując na poprzednim (base_row_cross).
-  # 2. Predykcja na nadchodzące losowanie bazując na najnowszym zakończonym losowaniu (latest_row_cross).
-  
+  # Dual Alignment: Weryfikacja trafień + Aktywna predykcja
   eval_base_row = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
   eval_target_row = df.iloc[-1]
 
   eval_base_id = str(eval_base_row["ID"]).strip()
-  eval_base_date = str(eval_base_row["Data"]).strip()
-  eval_base_hour = str(eval_base_row["Godzina"]).strip()
-  eval_base_nums = {
-      int(v) for v in get_row_numbers(eval_base_row) if v.isdigit()
-  }
-
   eval_target_id = str(eval_target_row["ID"]).strip()
-  eval_target_nums = {
-      f"{int(v):02d}" if v.isdigit() else v for v in get_row_numbers(eval_target_row)
-  }
+  eval_target_nums = {f"{int(v):02d}" for v in get_row_numbers(eval_target_row)}
 
-  # Predykcja na nadchodzące losowanie (bazuje na najnowszym zakończonym losowaniu)
   pred_base_row = df.iloc[-1]
   pred_base_id = str(pred_base_row["ID"]).strip()
   pred_base_date = str(pred_base_row["Data"]).strip()
   pred_base_hour = str(pred_base_row["Godzina"]).strip()
-  pred_base_nums = {
-      int(v) for v in get_row_numbers(pred_base_row) if v.isdigit()
-  }
-  pred_base_list = sorted(
-      [f"{int(v):02d}" for v in get_row_numbers(pred_base_row) if v.isdigit()],
-      key=lambda x: int(x),
-  )
+  pred_base_nums = {int(v) for v in get_row_numbers(pred_base_row)}
 
-
-  def get_distinct_coupons(session_time, limit, current_zakres):
+  def get_distinct_coupons(
+      session_time, limit, current_zakres, use_endings_boost=True, missing_ends=()
+  ):
     df_session = df.tail(int(current_zakres))
     df_session = df_session[df_session["Godzina"] == session_time]
     fallback = [f"{i:02d}" for i in range(1, limit + 1)]
@@ -502,12 +563,24 @@ if df is not None and not df.empty:
     all_session_nums = []
     for _, row in df_session.iterrows():
       for val in get_row_numbers(row):
-        if val.isdigit():
-          all_session_nums.append(f"{int(val):02d}")
+        all_session_nums.append(f"{int(val):02d}")
 
     counts = pd.Series(all_session_nums).value_counts()
+
+    def score_num(n_str):
+      base_cnt = float(counts.get(n_str, 0))
+      if not use_endings_boost:
+        return base_cnt
+      end = int(n_str) % 10
+      mult = 1.0
+      if end in TOP_ENDINGS:
+        mult += 0.25  # Priorytet dla 5, 3, 7
+      if end in missing_ends:
+        mult += 0.35  # Priorytet dla odbicia pustej końcówki (91.23%)
+      return base_cnt * mult
+
     top_freq = sorted(
-        counts.index.tolist(), key=lambda x: counts[x], reverse=True
+        counts.index.tolist(), key=lambda x: score_num(x), reverse=True
     )
 
     set1 = []
@@ -548,39 +621,28 @@ if df is not None and not df.empty:
         sorted(set3[:limit], key=lambda x: int(x)),
     )
 
-
   # --- SESSION STATE DLA ZAMRAŻANIA ZESTAWÓW ---
-  if "locked_14" not in st.session_state:
-    st.session_state["locked_14"] = False
-  if "frozen_c14_1" not in st.session_state:
-    st.session_state["frozen_c14_1"] = []
-  if "frozen_c14_2" not in st.session_state:
-    st.session_state["frozen_c14_2"] = []
-  if "frozen_c14_3" not in st.session_state:
-    st.session_state["frozen_c14_3"] = []
+  for key_name, default_val in [
+      ("locked_14", False),
+      ("frozen_c14_1", []),
+      ("frozen_c14_2", []),
+      ("frozen_c14_3", []),
+      ("locked_22", False),
+      ("frozen_c22_1", []),
+      ("frozen_c22_2", []),
+      ("frozen_c22_3", []),
+  ]:
+    if key_name not in st.session_state:
+      st.session_state[key_name] = default_val
 
-  if "locked_22" not in st.session_state:
-    st.session_state["locked_22"] = False
-  if "frozen_c22_1" not in st.session_state:
-    st.session_state["frozen_c22_1"] = []
-  if "frozen_c22_2" not in st.session_state:
-    st.session_state["frozen_c22_2"] = []
-  if "frozen_c22_3" not in st.session_state:
-    st.session_state["frozen_c22_3"] = []
-
-
-  # --- 3. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
+  # --- 4. TOP 15 ORAZ TOP PRZESKOKÓW (14:00) ---
   st.subheader("☀️ Godzina 14:00 (Statystyki Historyczne)")
-  even_14, odd_14 = get_session_top15(zakres, "14:00")
-  even_22, odd_22 = get_session_top15(zakres, "22:00")
-  jumpers_14 = get_session_top_jumpers(zakres, "14:00", 5)
-  jumpers_22 = get_session_top_jumpers(zakres, "22:00", 5)
 
   pred_even_14 = get_cross_session_strict_predictions_with_sources(
-      zakres, even_14, prev_nums_14, top_k=3
+      zakres, even_14, prev_nums_14, "14:00", tuple(missing_endings), top_k=3
   )[0]
   pred_odd_14 = get_cross_session_strict_predictions_with_sources(
-      zakres, odd_14, prev_nums_14, top_k=3
+      zakres, odd_14, prev_nums_14, "14:00", tuple(missing_endings), top_k=3
   )[0]
 
   hits_14_e = (
@@ -656,7 +718,11 @@ if df is not None and not df.empty:
     sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_14_3")
 
   raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
-      "14:00", max(sz_14_1, sz_14_2, sz_14_3), zakres
+      "14:00",
+      max(sz_14_1, sz_14_2, sz_14_3),
+      zakres,
+      prioritize_top_endings,
+      tuple(missing_endings),
   )
   if not st.session_state["locked_14"]:
     st.session_state["frozen_c14_1"] = raw_c14_1[:sz_14_1]
@@ -730,13 +796,13 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 4. TOP 15 ORAZ TOP PRZESKOKÓW (22:00) ---
+  # --- 5. TOP 15 ORAZ TOP PRZESKOKÓW (22:00) ---
   st.subheader("🌙 Godzina 22:00 (Statystyki Historyczne)")
   pred_even_22 = get_cross_session_strict_predictions_with_sources(
-      zakres, even_22, prev_nums_22, top_k=3
+      zakres, even_22, prev_nums_22, "22:00", tuple(missing_endings), top_k=3
   )[0]
   pred_odd_22 = get_cross_session_strict_predictions_with_sources(
-      zakres, odd_22, prev_nums_22, top_k=3
+      zakres, odd_22, prev_nums_22, "22:00", tuple(missing_endings), top_k=3
   )[0]
   hits_22_e = (
       sum(1 for n in even_22 if n in latest_nums_22)
@@ -811,7 +877,11 @@ if df is not None and not df.empty:
     sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_22_3")
 
   raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
-      "22:00", max(sz_22_1, sz_22_2, sz_22_3), zakres
+      "22:00",
+      max(sz_22_1, sz_22_2, sz_22_3),
+      zakres,
+      prioritize_top_endings,
+      tuple(missing_endings),
   )
   if not st.session_state["locked_22"]:
     st.session_state["frozen_c22_1"] = raw_c22_1[:sz_22_1]
@@ -885,13 +955,12 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. PREDYKCJE NA PRZYSZŁE LOSOWANIE & WERYFIKACJA OSTATNIEGO LOSOWANIA ---
+  # --- 6. AKTYWNA PREDYKCJA MIĘDZYSESYJNA, KLASTRY PARTNERÓW & WERYFIKACJA ---
   st.subheader("🔥 Aktywna Predykcja Międzysesyjna & Trafienia")
   st.markdown(
       f"1️⃣ **Weryfikacja trafień w ostatnim losowaniu #{eval_target_id}** (bazując na #{eval_base_id}):"
   )
 
-  # Obliczamy top 15 skoczków dla weryfikacji trafień w ostatnim losowaniu
   j_eval_list = get_cross_session_top_jumpers(zakres, 20)
   top_15_eval = sorted(j_eval_list[:15], key=lambda x: int(x))
   if len(top_15_eval) < 15:
@@ -910,28 +979,28 @@ if df is not None and not df.empty:
     eval_items.append(f"**{n_str}**[{hit_tick}]" if hit_tick else f"**{n_str}**")
 
   mid_e = len(eval_items) // 2
-  st.markdown(f"Trafienia ogólne w Top 15: **{hits_eval_total}/15**")
+  st.markdown(f"Trafienia ogólne w Top 15 Skoczków: **{hits_eval_total}/15**")
   st.markdown("   ".join(eval_items[:mid_e]))
   st.markdown("   ".join(eval_items[mid_e:]))
 
   st.markdown("---")
 
+  next_session_label = "22:00" if pred_base_hour == "14:00" else "14:00"
   st.markdown(
-      f"2️⃣ **Predykcje na nadchodzące losowanie** (bazując na zakończonym losowaniu **#{pred_base_id}** [{pred_base_date} | ⏰ {pred_base_hour}]):"
+      f"2️⃣ **Predykcje na nadchodzące losowanie ({next_session_label})** "
+      f"(bazując na zakończonym losowaniu **#{pred_base_id}** [{pred_base_date} | ⏰ {pred_base_hour}]):"
   )
 
-  j_cross_list = get_cross_session_top_jumpers(zakres, 20)
-  top_15_cross = sorted(j_cross_list[:15], key=lambda x: int(x))
-  if len(top_15_cross) < 15:
-    for i in range(1, 81):
-      s_n = f"{i:02d}"
-      if len(top_15_cross) < 15 and s_n not in top_15_cross:
-        top_15_cross.append(s_n)
-  top_15_cross = sorted(top_15_cross[:15], key=lambda x: int(x))
+  top_15_cross = top_15_eval
 
   pred_cross, source_mapping = (
       get_cross_session_strict_predictions_with_sources(
-          zakres, top_15_cross, pred_base_nums, top_k=9
+          zakres,
+          top_15_cross,
+          pred_base_nums,
+          pred_base_hour,
+          tuple(missing_endings),
+          top_k=9,
       )
   )
 
@@ -946,10 +1015,24 @@ if df is not None and not df.empty:
     )
 
   # --- LISTA 1: TOP 9 PREDYKCJI (NA CZERWONO DO GRY) ---
-  st.markdown("🎯 **Top 9 Predykcji Międzysesyjnych (Typy do gry):**")
+  st.markdown(f"🎯 **Top 9 Predykcji Międzysesyjnych (Typy do gry na {next_session_label}):**")
   pred_sorted_list = sorted(list(pred_cross), key=lambda x: int(x))
   pred_items = [f":red[**{n_str}**]" for n_str in pred_sorted_list]
   st.markdown("   ".join(pred_items))
+
+  # --- KLASTRY PARTNERÓW DO PARY ---
+  if pred_sorted_list:
+    partner_hints = []
+    for p_str in pred_sorted_list[:5]:
+      end_d = int(p_str) % 10
+      partners = [pt for pt in CLUSTER_PARTNERS.get(end_d, []) if pt != p_str]
+      if partners:
+        partner_hints.append(f"**{p_str}** ➕ ({', '.join(partners[:2])})")
+    if partner_hints:
+      st.markdown(
+          "🤝 **Sugerowani partnerzy z klastrów końcówek (do par/trójek):** "
+          + " | ".join(partner_hints)
+      )
 
   st.markdown("")
 
@@ -966,12 +1049,13 @@ if df is not None and not df.empty:
 
   st.markdown(
       "Legenda: Liczby oznaczone na :red[**czerwono**] to **Top 9 predykcji**"
+      " (wzmocnione wagami końcówek 5/3/7, skoczków 3/8 oraz odbić pustych końcówek)"
       " | **✅** – trafienie w zakończonym losowaniu."
   )
 
   st.divider()
 
-  # --- 6. ANALIZA PAR I TRÓJEK ---
+  # --- 7. ANALIZA PAR I TRÓJEK ---
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
   selected_session_for_tuples = st.selectbox(
       "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
@@ -980,19 +1064,15 @@ if df is not None and not df.empty:
       int(zakres)
   )
 
-
   def get_top_tuples(df_session, n_size, limit=5):
     counter = Counter()
     for _, row in df_session.iterrows():
-      draw_nums = [
-          f"{int(v):02d}" for v in get_row_numbers(row) if v.isdigit()
-      ]
+      draw_nums = [f"{int(v):02d}" for v in get_row_numbers(row)]
       if len(draw_nums) >= n_size:
         sorted_nums = sorted(list(set(draw_nums)), key=lambda x: int(x))
         for comb in combinations(sorted_nums, n_size):
           counter[comb] += 1
     return counter.most_common(limit)
-
 
   top_pairs = get_top_tuples(df_tuples_session, 2, 5)
   top_triplets = get_top_tuples(df_tuples_session, 3, 5)
@@ -1021,12 +1101,12 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 7. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
+  # --- 8. PEŁNA BAZA WSZYSTKICH LOSOWAŃ ---
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   display_data = []
   df_reversed = df.iloc[::-1]
   for _, row in df_reversed.iterrows():
-    nums = [f"{int(v):02d}" for v in get_row_numbers(row) if v.isdigit()]
+    nums = [f"{int(v):02d}" for v in get_row_numbers(row)]
     display_data.append({
         "ID": row["ID"],
         "Data": row["Data"],

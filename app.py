@@ -459,17 +459,35 @@ if df is not None and not df.empty:
         int(v) for v in get_row_numbers(df_22_sub.iloc[-2]) if v.isdigit()
     }
 
-  # --- POPRAWKA: BAZA TO ZAWSZE OSTATNIE ZAKOŃCZONE LOSOWANIE (NOWOŚĆ: DF.ILOC[-1]) ---
-  base_row_cross = df.iloc[-1]
+  # --- DUAL ALIGNMENT: 
+  # 1. Weryfikacja trafień dla ostatnio zakończonego losowania (target_row_cross) bazując na poprzednim (base_row_cross).
+  # 2. Predykcja na nadchodzące losowanie bazując na najnowszym zakończonym losowaniu (latest_row_cross).
+  
+  eval_base_row = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
+  eval_target_row = df.iloc[-1]
 
-  base_cross_id = str(base_row_cross["ID"]).strip()
-  base_cross_date = str(base_row_cross["Data"]).strip()
-  base_cross_hour = str(base_row_cross["Godzina"]).strip()
-  base_cross_nums = {
-      int(v) for v in get_row_numbers(base_row_cross) if v.isdigit()
+  eval_base_id = str(eval_base_row["ID"]).strip()
+  eval_base_date = str(eval_base_row["Data"]).strip()
+  eval_base_hour = str(eval_base_row["Godzina"]).strip()
+  eval_base_nums = {
+      int(v) for v in get_row_numbers(eval_base_row) if v.isdigit()
   }
-  base_cross_list = sorted(
-      [f"{int(v):02d}" for v in get_row_numbers(base_row_cross) if v.isdigit()],
+
+  eval_target_id = str(eval_target_row["ID"]).strip()
+  eval_target_nums = {
+      f"{int(v):02d}" if v.isdigit() else v for v in get_row_numbers(eval_target_row)
+  }
+
+  # Predykcja na nadchodzące losowanie (bazuje na najnowszym zakończonym losowaniu)
+  pred_base_row = df.iloc[-1]
+  pred_base_id = str(pred_base_row["ID"]).strip()
+  pred_base_date = str(pred_base_row["Data"]).strip()
+  pred_base_hour = str(pred_base_row["Godzina"]).strip()
+  pred_base_nums = {
+      int(v) for v in get_row_numbers(pred_base_row) if v.isdigit()
+  }
+  pred_base_list = sorted(
+      [f"{int(v):02d}" for v in get_row_numbers(pred_base_row) if v.isdigit()],
       key=lambda x: int(x),
   )
 
@@ -867,21 +885,40 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 5. AKTYWNA PREDYKCJA NA NADCHODZĄCE LOSOWANIE (BAZA = OSTATNIE LOSOWANIE 14:00) ---
-  st.subheader("🔥 Aktywna Predykcja Międzysesyjna (Typy na wieczór 22:00)")
+  # --- 5. PREDYKCJE NA PRZYSZŁE LOSOWANIE & WERYFIKACJA OSTATNIEGO LOSOWANIA ---
+  st.subheader("🔥 Aktywna Predykcja Międzysesyjna & Trafienia")
   st.markdown(
-      f"Bazujemy na najnowszym zakończonym losowaniu **#{base_cross_id}**"
-      f" ({base_cross_date} | ⏰ {base_cross_hour}), prognozując typy na nadchodzącą sesję:"
+      f"1️⃣ **Weryfikacja trafień w ostatnim losowaniu #{eval_target_id}** (bazując na #{eval_base_id}):"
   )
 
-  if base_cross_list:
-    formatted_cross = [
-        f"{int(v):02d}" if v.isdigit() else v for v in base_cross_list
-    ]
-    mid_cross = len(formatted_cross) // 2 if len(formatted_cross) >= 20 else 10
-    p_line1 = " ".join(formatted_cross[:mid_cross])
-    p_line2 = " ".join(formatted_cross[mid_cross:])
-    st.code(f"Losowanie bazowe #{base_cross_id} ({base_cross_date} | ⏰ {base_cross_hour}):\n{p_line1}\n{p_line2}", language=None)
+  # Obliczamy top 15 skoczków dla weryfikacji trafień w ostatnim losowaniu
+  j_eval_list = get_cross_session_top_jumpers(zakres, 20)
+  top_15_eval = sorted(j_eval_list[:15], key=lambda x: int(x))
+  if len(top_15_eval) < 15:
+    for i in range(1, 81):
+      s_n = f"{i:02d}"
+      if len(top_15_eval) < 15 and s_n not in top_15_eval:
+        top_15_eval.append(s_n)
+  top_15_eval = sorted(top_15_eval[:15], key=lambda x: int(x))
+
+  hits_eval_total = sum(1 for n in top_15_eval if n in eval_target_nums)
+
+  eval_items = []
+  for n_str in top_15_eval:
+    is_hit = n_str in eval_target_nums
+    hit_tick = "✅" if is_hit else ""
+    eval_items.append(f"**{n_str}**[{hit_tick}]" if hit_tick else f"**{n_str}**")
+
+  mid_e = len(eval_items) // 2
+  st.markdown(f"Trafienia ogólne w Top 15: **{hits_eval_total}/15**")
+  st.markdown("   ".join(eval_items[:mid_e]))
+  st.markdown("   ".join(eval_items[mid_e:]))
+
+  st.markdown("---")
+
+  st.markdown(
+      f"2️⃣ **Predykcje na nadchodzące losowanie** (bazując na zakończonym losowaniu **#{pred_base_id}** [{pred_base_date} | ⏰ {pred_base_hour}]):"
+  )
 
   j_cross_list = get_cross_session_top_jumpers(zakres, 20)
   top_15_cross = sorted(j_cross_list[:15], key=lambda x: int(x))
@@ -894,7 +931,7 @@ if df is not None and not df.empty:
 
   pred_cross, source_mapping = (
       get_cross_session_strict_predictions_with_sources(
-          zakres, top_15_cross, base_cross_nums, top_k=9
+          zakres, top_15_cross, pred_base_nums, top_k=9
       )
   )
 
@@ -908,17 +945,15 @@ if df is not None and not df.empty:
         + " | ".join(mapping_str_parts)
     )
 
-  st.markdown("---")
-
-  # --- LISTA 1: TOP 9 PREDYKCJI (NA CZERWONO DO GRY NA 22:00) ---
-  st.markdown("🎯 **Top 9 Predykcji Międzysesyjnych (Typy do gry na 22:00):**")
+  # --- LISTA 1: TOP 9 PREDYKCJI (NA CZERWONO DO GRY) ---
+  st.markdown("🎯 **Top 9 Predykcji Międzysesyjnych (Typy do gry):**")
   pred_sorted_list = sorted(list(pred_cross), key=lambda x: int(x))
   pred_items = [f":red[**{n_str}**]" for n_str in pred_sorted_list]
   st.markdown("   ".join(pred_items))
 
   st.markdown("")
 
-  # --- LISTA 2: TOP 15 WSPÓLNYCH SKOCZKÓW ---
+  # --- LISTA 2: TOP 15 WSPÓLNYCH SKOCZKÓW (SZEROKA PULA) ---
   st.markdown("🔥 **Top 15 Wspólnych Skoczków (Szeroka pula):**")
   cross_items = [f"**{n_str}**" for n_str in top_15_cross]
 
@@ -931,7 +966,7 @@ if df is not None and not df.empty:
 
   st.markdown(
       "Legenda: Liczby oznaczone na :red[**czerwono**] to **Top 9 predykcji**"
-      " wyliczonych na dzisiejsze losowanie o 22:00."
+      " | **✅** – trafienie w zakończonym losowaniu."
   )
 
   st.divider()

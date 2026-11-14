@@ -961,6 +961,91 @@ if df is not None and not df.empty:
       f"1️⃣ **Weryfikacja trafień w ostatnim losowaniu #{eval_target_id}** (bazując na #{eval_base_id}):"
   )
 
+  # Obliczenie ściśle zamrożonej predykcji Top 9 sprzed losowania eval_target_id (bez podglądu przyszłości)
+  eval_base_hour = str(eval_base_row["Godzina"]).strip()
+  eval_base_date = str(eval_base_row["Data"]).strip()
+  eval_base_nums_int = [int(v) for v in get_row_numbers(eval_base_row)]
+  eval_base_nums_set = set(eval_base_nums_int)
+  eval_missing_endings = sorted(list(set(range(10)) - {n % 10 for n in eval_base_nums_int}))
+
+  @st.cache_data
+  def get_frozen_past_prediction(current_zakres, base_nums_tuple, base_hour, missing_ends_tuple):
+    df_past = df.iloc[:-1] if len(df) >= 2 else df
+    sub = df_past.tail(int(current_zakres)).reset_index(drop=True)
+    if len(sub) < 2:
+      return []
+    # Top 15 skoczków z bazy sprzed ostatniego losowania
+    j_counter = Counter()
+    for i in range(1, len(sub)):
+      p_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      c_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
+      for n in p_nums.intersection(c_nums):
+        weight = 1.2 if (n % 10) in JUMPER_ENDINGS else 1.0
+        j_counter[n] += weight
+    cand_list = sorted([f"{n:02d}" for n, _ in j_counter.most_common(15)], key=lambda x: int(x))
+    if len(cand_list) < 15:
+      for i in range(1, 81):
+        s_n = f"{i:02d}"
+        if len(cand_list) < 15 and s_n not in cand_list:
+          cand_list.append(s_n)
+    cand_list = sorted(cand_list[:15], key=lambda x: int(x))
+
+    base_nums_set = set(base_nums_tuple)
+    t_scores = defaultdict(float)
+    for i in range(1, len(sub)):
+      prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
+      curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
+      jumpers = prev_nums.intersection(curr_nums)
+      active_overlap = prev_nums.intersection(base_nums_set)
+      if active_overlap:
+        for j in jumpers:
+          j_str = f"{j:02d}"
+          if j_str in cand_list:
+            score = float(len(active_overlap))
+            if (j % 10) in TOP_ENDINGS:
+              score *= 3.5
+            if (j % 10) in JUMPER_ENDINGS:
+              score *= 1.10
+            if (j % 10) in missing_ends_tuple:
+              score *= 1.25
+            t_scores[j_str] += score
+
+    strong_map = STRONG_TRANSITIONS_14_TO_22 if base_hour == "14:00" else STRONG_TRANSITIONS_22_TO_14
+    for src_num in base_nums_set:
+      if src_num in strong_map:
+        for target_num in strong_map[src_num]:
+          t_str = f"{target_num:02d}"
+          if t_str in cand_list:
+            t_scores[t_str] += 2.5
+
+    sorted_items = sorted(t_scores.items(), key=lambda x: x[1], reverse=True)
+    frozen_top9 = sorted([item[0] for item in sorted_items[:9]], key=lambda x: int(x))
+    return frozen_top9
+
+  frozen_top9_eval = get_frozen_past_prediction(
+      zakres, tuple(sorted(eval_base_nums_int)), eval_base_hour, tuple(eval_missing_endings)
+  )
+  hits_frozen_top9 = sum(1 for n in frozen_top9_eval if n in eval_target_nums)
+
+  frozen_eval_items = []
+  for n_str in frozen_top9_eval:
+    if n_str in eval_target_nums:
+      frozen_eval_items.append(f":green[**{n_str}✅**]")
+    else:
+      frozen_eval_items.append(f"**{n_str}**")
+
+  st.markdown(
+      f"🔒 **Zamrożona predykcja Top 9 na #{eval_target_id}** "
+      f"(wygenerowana po **#{eval_base_id}** [{eval_base_date} | {eval_base_hour}]) — "
+      f"Faktyczne trafienia: **{hits_frozen_top9}/{len(frozen_top9_eval) if frozen_top9_eval else 9}**"
+  )
+  if frozen_eval_items:
+    st.markdown("   ".join(frozen_eval_items))
+  else:
+    st.markdown("*Brak wystarczających danych w wybranym zakresie do odtworzenia predykcji.*")
+
+  st.markdown("")
+
   j_eval_list = get_cross_session_top_jumpers(zakres, 20)
   top_15_eval = sorted(j_eval_list[:15], key=lambda x: int(x))
   if len(top_15_eval) < 15:

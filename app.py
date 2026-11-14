@@ -470,7 +470,7 @@ if df is not None and not df.empty:
             score = float(len(active_overlap))
             # Bonus za topowe końcówki (5, 3, 7) oraz końcówki skoczków (3, 8)
             if (j % 10) in TOP_ENDINGS:
-              score *= 1.15
+              score *= 3.5  # Mocny nacisk na najczęstsze końcówki (5, 3, 7)
             if (j % 10) in JUMPER_ENDINGS:
               score *= 1.10
             # Bonus za odbicie brakującej końcówki (91.23%)

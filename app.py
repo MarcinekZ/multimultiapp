@@ -45,20 +45,15 @@ def load_data():
   ]
   df_fallback = pd.DataFrame(guaranteed_rows)
 
-  df_csv = None
-  csv_files = glob.glob("*.csv")
+  dfs = [df_fallback]
+  csv_files = sorted(glob.glob("*.csv"))
   for fname in csv_files:
     try:
       temp_df = pd.read_csv(fname, header=None)
       if not temp_df.empty:
-        df_csv = temp_df
-        break
+        dfs.append(temp_df)
     except Exception:
       continue
-
-  dfs = [df_fallback]
-  if df_csv is not None and not df_csv.empty:
-    dfs.append(df_csv)
 
   df = pd.concat(dfs, ignore_index=True)
 
@@ -1137,6 +1132,66 @@ if df is not None and not df.empty:
       " (wzmocnione wagami końcówek 5/3/7, skoczków 3/8 oraz odbić pustych końcówek)"
       " | **✅** – trafienie w zakończonym losowaniu."
   )
+
+  st.markdown("")
+
+  # --- DODATKOWA PODPOWIEDŹ: ECHO SPRZED DOKŁADNIE 16 LOSOWAŃ ---
+  st.markdown(f"🔮 **Echo sprzed dokładnie 16 losowań (Podpowiedź na {next_session_label}):**")
+  st.caption(
+      "Statystyka bazy: odstęp 16 losowań generuje najwyższe zagęszczenie mocnych nawrotów "
+      "(8–12 liczb z jednego koszyka). Liczby wyróżnione na :red[**czerwono**] pokrywają się z Top 9 "
+      "lub należą do topowych końcówek (5, 3, 7)."
+  )
+
+  col_echo1, col_echo2 = st.columns(2)
+  with col_echo1:
+    if len(df) >= 16:
+      echo_all_row = df.iloc[-16]
+      echo_all_id = str(echo_all_row["ID"]).strip()
+      echo_all_date = str(echo_all_row["Data"]).strip()
+      echo_all_hour = str(echo_all_row["Godzina"]).strip()
+      echo_all_nums = sorted([f"{int(v):02d}" for v in get_row_numbers(echo_all_row)], key=lambda x: int(x))
+
+      echo_all_fmt = []
+      for n_s in echo_all_nums:
+        if n_s in pred_cross:
+          echo_all_fmt.append(f":red[**{n_s}🎯**]")
+        elif (int(n_s) % 10) in TOP_ENDINGS:
+          echo_all_fmt.append(f":red[**{n_s}**]")
+        else:
+          echo_all_fmt.append(f"**{n_s}**")
+
+      st.info(
+          f"🌐 **Cykl ogólny (-16 losowań):** losowanie **#{echo_all_id}** [{echo_all_date} | {echo_all_hour}]\n\n"
+          + "  ".join(echo_all_fmt[:10])
+          + "\n\n"
+          + "  ".join(echo_all_fmt[10:])
+      )
+
+  with col_echo2:
+    df_next_sess = df_22_all if next_session_label == "22:00" else df_14_all
+    if len(df_next_sess) >= 16:
+      echo_sess_row = df_next_sess.iloc[-16]
+      echo_sess_id = str(echo_sess_row["ID"]).strip()
+      echo_sess_date = str(echo_sess_row["Data"]).strip()
+      echo_sess_hour = str(echo_sess_row["Godzina"]).strip()
+      echo_sess_nums = sorted([f"{int(v):02d}" for v in get_row_numbers(echo_sess_row)], key=lambda x: int(x))
+
+      echo_sess_fmt = []
+      for n_s in echo_sess_nums:
+        if n_s in pred_cross:
+          echo_sess_fmt.append(f":red[**{n_s}🎯**]")
+        elif (int(n_s) % 10) in TOP_ENDINGS:
+          echo_sess_fmt.append(f":red[**{n_s}**]")
+        else:
+          echo_sess_fmt.append(f"**{n_s}**")
+
+      st.info(
+          f"⏰ **Cykl sesji {next_session_label} (-16 losowań tej godziny):** losowanie **#{echo_sess_id}** [{echo_sess_date} | {echo_sess_hour}]\n\n"
+          + "  ".join(echo_sess_fmt[:10])
+          + "\n\n"
+          + "  ".join(echo_sess_fmt[10:])
+      )
 
   st.divider()
 

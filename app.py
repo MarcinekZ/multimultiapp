@@ -1422,9 +1422,10 @@ if df is not None and not df.empty:
       + "   ".join([f":red[**{n}**]" for n in fusion_nums_sorted])
   )
 
-  session_nums_for_fusion = latest_nums_14 if next_session_label == "14:00" else latest_nums_22
-  session_last_id = last_id_14 if next_session_label == "14:00" else last_id_22
-  session_last_date = last_date_14 if next_session_label == "14:00" else last_date_22
+  # Weryfikacja trafień w Kuponie Dnia zawsze względem absolutnie ostatniego losowania w bazie (#17149)
+  session_nums_for_fusion = {f"{n:02d}" for n in latest_overall_nums_int}
+  session_last_id = latest_id
+  session_last_date = latest_date
   fusion_hits = sum(1 for n in fusion_nums_sorted if n in session_nums_for_fusion)
 
   fusion_display_hits = []
@@ -1435,7 +1436,7 @@ if df is not None and not df.empty:
       fusion_display_hits.append(f"**{n}**")
 
   st.markdown(
-      f"🎯 **Trafienia w ostatnim losowaniu tej sesji (#{session_last_id} [{session_last_date}]):** "
+      f"🎯 **Trafienia w najnowszym losowaniu (#{session_last_id} [{session_last_date} | {latest_hour}]):** "
       f"**{fusion_hits}/{fusion_size}** ➔ " + "   ".join(fusion_display_hits)
   )
 

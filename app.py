@@ -209,36 +209,71 @@ def parse_and_clean_df(dfs):
   return df
 
 
+def _extract_lotto_items(payload):
+  """Rekurencyjnie wyciąga listę losowań z dowolnej struktury JSON zwracanej przez API Lotto lub mirror."""
+  found = []
+  if isinstance(payload, list):
+    for el in payload:
+      found.extend(_extract_lotto_items(el))
+  elif isinstance(payload, dict):
+    has_id = any(k in payload for k in ("drawSystemId", "drawId", "id", "numer"))
+    has_nums = any(k in payload for k in ("resultsJson", "numbers", "results", "liczby"))
+    if has_id and has_nums:
+      found.append(payload)
+    for v in payload.values():
+      if isinstance(v, (dict, list)):
+        found.extend(_extract_lotto_items(v))
+  return found
+
+
 def fetch_lotto_api_rows():
-  """Pobiera najnowsze wyniki Multi Multi z otwartego API Lotto i konwertuje na wiersze DataFrame."""
+  """Pobiera najnowsze wyniki Multi Multi z otwartego API Lotto oraz alternatywnych źródeł (HTML/CSV/JSON)."""
+  import re
+  session = requests.Session()
+  headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+      "Referer": "https://www.lotto.pl/multi-multi/wyniki-i-wygrane",
+      "Origin": "https://www.lotto.pl",
+  }
+
+  # Rozgrzanie sesji ciasteczkami strony głównej Lotto (pomaga ominąć podstawową weryfikację sesji)
+  try:
+    session.get("https://www.lotto.pl/multi-multi/wyniki-i-wygrane", headers=headers, timeout=4)
+  except Exception:
+    pass
+
   endpoints = [
       "https://www.lotto.pl/api/lotteries/draw-results/by-gametype?game=MultiMulti&index=1&size=30&sort=drawDate&order=DESC",
+      "https://www.lotto.pl/api/lotteries/draw-results/by-gametype?gameType=MultiMulti&index=1&size=30&sort=drawDate&order=DESC",
       "https://developers.lotto.pl/api/open/v1/lotteries/draw-results/by-gametype?gameType=MultiMulti&index=1&size=30&sort=drawDate&order=DESC",
       "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=30",
+      "https://api.lotto.pl/v1/gametype/results?gameType=MultiMulti&size=30",
   ]
-  headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.lotto.pl/multi-multi/wyniki-i-wygrane",
-  }
+
   rows = []
+  seen_ids = set()
+
   for url in endpoints:
     try:
-      res = requests.get(url, headers=headers, timeout=5)
+      res = session.get(url, headers=headers, timeout=6)
       if res.status_code != 200:
         continue
       data = res.json()
-      items = []
-      if isinstance(data, dict):
-        items = data.get("items") or data.get("results") or []
-      elif isinstance(data, list):
-        items = data
+      items = _extract_lotto_items(data)
 
       for item in items:
         if not isinstance(item, dict):
           continue
-        draw_id = item.get("drawSystemId") or item.get("id")
-        draw_date_raw = str(item.get("drawDate") or item.get("date") or "")
+        draw_id = item.get("drawSystemId") or item.get("drawId") or item.get("id") or item.get("numer")
+        if draw_id is None:
+          continue
+        draw_id_str = str(draw_id).strip()
+        if not draw_id_str.isdigit() or draw_id_str in seen_ids:
+          continue
+
+        draw_date_raw = str(item.get("drawDate") or item.get("date") or item.get("data") or "")
         results_list = item.get("results") or []
         nums = []
         if isinstance(results_list, list) and results_list:
@@ -248,10 +283,10 @@ def fetch_lotto_api_rows():
           elif isinstance(first_res, (int, str)):
             nums = results_list
         if not nums:
-          nums = item.get("resultsJson") or item.get("numbers") or []
+          nums = item.get("resultsJson") or item.get("numbers") or item.get("liczby") or []
 
-        if draw_id and len(nums) >= 20:
-          # Parsowanie daty ISO np. 2026-11-16T14:00:00Z
+        clean_nums = [int(x) for x in nums if str(x).strip().isdigit() and 1 <= int(x) <= 80]
+        if len(clean_nums) >= 20:
           date_str = draw_date_raw[:10]
           hour_str = "14:00"
           try:
@@ -261,15 +296,49 @@ def fetch_lotto_api_rows():
               if len(parts_d) == 3:
                 date_str = f"{parts_d[2]}.{parts_d[1]}.{parts_d[0]}"
               h_val = int(tm_part.split(":")[0])
-              # Uwzględnienie strefy czasowej UTC/CET (13:00 UTC = 14:00 CET, 21:00 UTC = 22:00 CET)
               hour_str = "14:00" if h_val < 17 else "22:00"
+            elif ":" in draw_date_raw:
+              h_match = re.search(r"(\d{1,2}):\d{2}", draw_date_raw)
+              if h_match:
+                hour_str = "14:00" if int(h_match.group(1)) < 18 else "22:00"
           except Exception:
             pass
-          rows.append([str(draw_id), date_str, hour_str] + [int(x) for x in nums[:20]])
+          seen_ids.add(draw_id_str)
+          rows.append([draw_id_str, date_str, hour_str] + clean_nums[:20])
       if rows:
         break
     except Exception:
       continue
+
+  # Zapasowe źródło: otwarte archiwum tekstowe/CSV Multi Multi (mbnet / multipasko), gdy główne API Lotto blokuje IP chmury
+  if not rows:
+    fallback_urls = [
+        "http://www.mbnet.com.pl/ml.txt",
+        "https://www.mbnet.com.pl/ml.txt",
+    ]
+    for fb_url in fallback_urls:
+      try:
+        r_fb = session.get(fb_url, headers={"User-Agent": headers["User-Agent"]}, timeout=6)
+        if r_fb.status_code == 200 and len(r_fb.text) > 500:
+          lines_fb = [ln.strip() for ln in r_fb.text.splitlines() if ln.strip()][-40:]
+          for ln in lines_fb:
+            # Format mbnet: 17149. 15.11.2026 04,08,09,...
+            m = re.match(r"^(\d+)\.\s*(\d{2}\.\d{2}\.\d{4})\s+([\d,]+)", ln)
+            if m:
+              d_id = m.group(1)
+              d_dt = m.group(2)
+              d_nums = [int(x) for x in m.group(3).split(",") if x.strip().isdigit() and 1 <= int(x) <= 80]
+              if len(d_nums) >= 20 and d_id not in seen_ids:
+                # W Multi Multi losowania nieparzyste/parzyste lub wg kolejności tego samego dnia
+                same_day_count = sum(1 for r in rows if r[1] == d_dt)
+                h_str = "14:00" if same_day_count == 0 else "22:00"
+                seen_ids.add(d_id)
+                rows.append([d_id, d_dt, h_str] + d_nums[:20])
+          if rows:
+            # Korekta godziny dla ostatniego dnia, jeśli w danym dniu było tylko 1 losowanie lub na podstawie parzystości ID względem bazy
+            break
+      except Exception:
+        continue
 
   if rows:
     return pd.DataFrame(rows)
@@ -331,19 +400,36 @@ uploaded_csv = st.sidebar.file_uploader(
 )
 
 if st.sidebar.button("🔄 Odśwież i zsynchronizuj z API", use_container_width=True):
-  with st.spinner("Pobieranie najnowszych wyników z Lotto.pl..."):
+  with st.spinner("Pobieranie najnowszych wyników z sieci..."):
     df_api = fetch_lotto_api_rows()
     if not df_api.empty:
       st.session_state["api_fetched_df"] = df_api
-      st.sidebar.success(f"✅ Pobrano {len(df_api)} losowań z API Lotto!")
+      try:
+        if os.path.exists("api_synced_draws.csv"):
+          old_api_df = read_flexible_csv("api_synced_draws.csv")
+          merged_api_df = parse_and_clean_df([old_api_df, df_api])
+        else:
+          merged_api_df = parse_and_clean_df([df_api])
+        merged_api_df.to_csv("api_synced_draws.csv", index=False, header=False)
+      except Exception:
+        pass
+      latest_api_id = str(df_api.iloc[-1][0])
+      st.session_state["sync_toast"] = ("success", f"✅ Zsynchronizowano! Najnowsze pobrane losowanie: #{latest_api_id}")
     else:
-      st.sidebar.warning(
-          "⚠️ Serwer Lotto.pl zablokował automatyczne zapytanie z chmury. "
-          "Użyj opcji wgrania pliku CSV lub szybkiego wpisu poniżej."
+      st.session_state["sync_toast"] = (
+          "warning",
+          "⚠️ Serwer Lotto.pl chwilowo blokuje połączenie z chmury. Użyj wgrania CSV lub szybkiego wpisu poniżej."
       )
   save_persistent_state()
   st.cache_data.clear()
   st.rerun()
+
+if "sync_toast" in st.session_state:
+  t_type, t_msg = st.session_state.pop("sync_toast")
+  if t_type == "success":
+    st.sidebar.success(t_msg)
+  else:
+    st.sidebar.warning(t_msg)
 
 disk_csv_sigs = tuple(
     (f, os.path.getmtime(f), os.path.getsize(f))

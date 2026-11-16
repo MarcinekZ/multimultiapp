@@ -2,7 +2,9 @@ from collections import Counter, defaultdict
 import datetime
 import glob
 from itertools import combinations
+import json
 import math
+import os
 import random
 import pandas as pd
 import requests
@@ -11,6 +13,111 @@ import streamlit as st
 st.set_page_config(
     page_title="Mobilny Panel Analityczny Ekipy", page_icon="🎯", layout="wide"
 )
+
+STATE_FILE = "panel_state.json"
+
+
+def load_persistent_state():
+  state = {}
+  # 1. Odczyt z pliku na dysku
+  if os.path.exists(STATE_FILE):
+    try:
+      with open(STATE_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        if isinstance(data, dict):
+          state.update(data)
+    except Exception:
+      pass
+
+  # 2. Odczyt z parametrów URL (zapasowy, gdyby kontener Streamlit Cloud się zrestartował)
+  try:
+    qp = st.query_params
+    if "l14" in qp and "locked_14" not in state:
+      state["locked_14"] = qp["l14"] == "1"
+    if "l22" in qp and "locked_22" not in state:
+      state["locked_22"] = qp["l22"] == "1"
+    for k_url, k_st in [
+        ("c14_1", "frozen_c14_1"),
+        ("c14_2", "frozen_c14_2"),
+        ("c14_3", "frozen_c14_3"),
+        ("c22_1", "frozen_c22_1"),
+        ("c22_2", "frozen_c22_2"),
+        ("c22_3", "frozen_c22_3"),
+    ]:
+      if k_url in qp and qp[k_url] and not state.get(k_st):
+        state[k_st] = [x for x in qp[k_url].split("-") if x]
+  except Exception:
+    pass
+
+  return state
+
+
+def save_persistent_state():
+  keys_to_save = [
+      "locked_14",
+      "frozen_c14_1",
+      "frozen_c14_2",
+      "frozen_c14_3",
+      "locked_22",
+      "frozen_c22_1",
+      "frozen_c22_2",
+      "frozen_c22_3",
+      "zakres_wspolny_val",
+      "zakres_14_val",
+      "zakres_22_val",
+      "sz_14_1",
+      "sz_14_2",
+      "sz_14_3",
+      "sz_22_1",
+      "sz_22_2",
+      "sz_22_3",
+      "fusion_coupon_size",
+      "prio_endings",
+  ]
+  payload = {}
+  for k in keys_to_save:
+    if k in st.session_state:
+      val = st.session_state[k]
+      if isinstance(val, (bool, int, float, str, list)):
+        payload[k] = val
+
+  try:
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+      json.dump(payload, f, ensure_ascii=False, indent=2)
+  except Exception:
+    pass
+
+  # Synchronizacja z adresem URL (chroni przed utratą po resecie sesji w chmurze)
+  try:
+    st.query_params["l14"] = "1" if payload.get("locked_14") else "0"
+    st.query_params["l22"] = "1" if payload.get("locked_22") else "0"
+    if payload.get("locked_14"):
+      st.query_params["c14_1"] = "-".join(payload.get("frozen_c14_1", []))
+      st.query_params["c14_2"] = "-".join(payload.get("frozen_c14_2", []))
+      st.query_params["c14_3"] = "-".join(payload.get("frozen_c14_3", []))
+    else:
+      for k in ["c14_1", "c14_2", "c14_3"]:
+        if k in st.query_params:
+          del st.query_params[k]
+
+    if payload.get("locked_22"):
+      st.query_params["c22_1"] = "-".join(payload.get("frozen_c22_1", []))
+      st.query_params["c22_2"] = "-".join(payload.get("frozen_c22_2", []))
+      st.query_params["c22_3"] = "-".join(payload.get("frozen_c22_3", []))
+    else:
+      for k in ["c22_1", "c22_2", "c22_3"]:
+        if k in st.query_params:
+          del st.query_params[k]
+  except Exception:
+    pass
+
+
+# Inicjalizacja trwałego stanu przed wyrenderowaniem widżetów
+if "state_initialized" not in st.session_state:
+  saved_state = load_persistent_state()
+  for k, v in saved_state.items():
+    st.session_state[k] = v
+  st.session_state["state_initialized"] = True
 
 
 def parse_and_clean_df(dfs):
@@ -131,11 +238,10 @@ if st.sidebar.button("🔄 Odśwież i zsynchronizuj z API", use_container_width
         st.sidebar.warning("Serwer Lotto odpowiedział, ale dane mogą być niedostępne.")
     except Exception:
       st.sidebar.error("Brak połączenia z siecią (używasz bazy lokalnej).")
+  save_persistent_state()
   st.cache_data.clear()
   st.rerun()
 
-# Sygnatura plików CSV na dysku, aby cache automatycznie odświeżał się przy nowym pliku
-import os
 disk_csv_sigs = tuple(
     (f, os.path.getmtime(f), os.path.getsize(f))
     for f in sorted(glob.glob("*.csv"))
@@ -189,7 +295,6 @@ if df is not None and not df.empty:
       1: ["11", "31", "61"],
   }
 
-  # Najsilniejsze historyczne przejścia międzysesyjne (baza -> cel)
   STRONG_TRANSITIONS_14_TO_22 = {
       74: [52, 63],
       18: [65, 13],
@@ -202,7 +307,6 @@ if df is not None and not df.empty:
       5: [15],
   }
 
-  # Podzbiory sesji
   df_14_all = df[df["Godzina"] == "14:00"].reset_index(drop=True)
   df_22_all = df[df["Godzina"] == "22:00"].reset_index(drop=True)
   total_14 = len(df_14_all)
@@ -298,8 +402,7 @@ if df is not None and not df.empty:
         f"🏆 **Liderzy całej bazy:** końcówki **5**, **3**, **7** | **Skoczkowie 1:1:** **3**, **8**."
     )
 
-  # Alert ekstremalnej anomalii parzystości (np. >=14 nieparzystych lub >=14 parzystych)
-  parity_bias = None  # "EVEN" jeśli trzeba kontrować nadmiar nieparzystych, "ODD" odwrotnie
+  parity_bias = None
   if len(odd_latest) >= 14:
     parity_bias = "EVEN"
     st.error(
@@ -339,11 +442,13 @@ if df is not None and not df.empty:
       if st.button("➖", use_container_width=True, key=f"{btn_prefix}_minus"):
         if st.session_state[state_key] > 1:
           st.session_state[state_key] -= 1
+          save_persistent_state()
           st.rerun()
     with c_p:
       if st.button("➕", use_container_width=True, key=f"{btn_prefix}_plus"):
         if st.session_state[state_key] < max_val:
           st.session_state[state_key] += 1
+          save_persistent_state()
           st.rerun()
 
     cur_v = st.session_state[state_key]
@@ -355,6 +460,7 @@ if df is not None and not df.empty:
           value=cur_v,
           format_func=lambda x: f"Wszystkie ({max_val})" if x == max_val else f"{x} losowań",
           key=state_key,
+          on_change=save_persistent_state,
           label_visibility="collapsed",
       )
     return chosen
@@ -392,10 +498,12 @@ if df is not None and not df.empty:
         f"14:00 = **{zakres_14}** | 22:00 = **{zakres_22}**"
     )
   with col_opt2:
+    if "prio_endings" not in st.session_state:
+      st.session_state["prio_endings"] = True
     prioritize_top_endings = st.toggle(
         "🔥 Priorytetyzuj Top Końcówki (5, 3, 7) oraz Odbicia w zestawach",
-        value=True,
         key="prio_endings",
+        on_change=save_persistent_state,
     )
 
   st.divider()
@@ -567,7 +675,6 @@ if df is not None and not df.empty:
               score *= 1.30
             transition_scores[j_str] += score
 
-    # Dodatkowy bonus za bezpośrednie odbicie w tej samej sesji lub silne przejścia międzysesyjne
     if intra_session:
       for src_num in base_nums_set:
         s_str = f"{src_num:02d}"
@@ -678,13 +785,10 @@ if df is not None and not df.empty:
       if len(set3) < limit and s_num not in set3:
         set3.append(s_num)
 
-    return (
-        sorted(set1[:limit], key=lambda x: int(x)),
-        sorted(set2[:limit], key=lambda x: int(x)),
-        sorted(set3[:limit], key=lambda x: int(x)),
-    )
+    # Nie sortujemy przed zwróceniem, aby zachować kolejność rankingu przy skracaniu do 1..10!
+    return set1[:limit], set2[:limit], set3[:limit]
 
-  # --- SESSION STATE DLA ZAMRAŻANIA ZESTAWÓW ---
+  # --- DOMYŚLNE WARTOŚCI STANU ZAMROŻENIA (JEŚLI NIE BYŁO W PLIKU/URL) ---
   for key_name, default_val in [
       ("locked_14", False),
       ("frozen_c14_1", []),
@@ -694,6 +798,12 @@ if df is not None and not df.empty:
       ("frozen_c22_1", []),
       ("frozen_c22_2", []),
       ("frozen_c22_3", []),
+      ("sz_14_1", 8),
+      ("sz_14_2", 8),
+      ("sz_14_3", 8),
+      ("sz_22_1", 8),
+      ("sz_22_2", 8),
+      ("sz_22_3", 8),
   ]:
     if key_name not in st.session_state:
       st.session_state[key_name] = default_val
@@ -804,48 +914,27 @@ if df is not None and not df.empty:
     ])
     st.caption(f"💤 **Najdłużej nieobecne w sesji 14:00 (Śpiochy):** {sl14_str}")
 
+  # --- ZESTAWY 14:00 (Z TRWAŁYM ZAMRAŻANIEM DO PLIKU + URL) ---
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 14:00):**")
-  col_14_s1, col_14_c1 = st.columns([1, 3])
-  with col_14_s1:
-    sz_14_1 = st.slider("Zestaw 1 (1-10):", 1, 10, 8, key="sz_14_1")
-  col_14_s2, col_14_c2 = st.columns([1, 3])
-  with col_14_s2:
-    sz_14_2 = st.slider("Zestaw 2 (1-10):", 1, 10, 8, key="sz_14_2")
-  col_14_s3, col_14_c3 = st.columns([1, 3])
-  with col_14_s3:
-    sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_14_3")
 
   raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
       "14:00",
-      max(sz_14_1, sz_14_2, sz_14_3),
+      10,
       zakres_14,
       prioritize_top_endings,
       tuple(missing_14),
       parity_bias,
   )
-  if not st.session_state["locked_14"]:
-    st.session_state["frozen_c14_1"] = raw_c14_1[:sz_14_1]
-    st.session_state["frozen_c14_2"] = raw_c14_2[:sz_14_2]
-    st.session_state["frozen_c14_3"] = raw_c14_3[:sz_14_3]
-  c_14_1 = st.session_state["frozen_c14_1"][:sz_14_1]
-  c_14_2 = st.session_state["frozen_c14_2"][:sz_14_2]
-  c_14_3 = st.session_state["frozen_c14_3"][:sz_14_3]
+  if not st.session_state["locked_14"] or not st.session_state["frozen_c14_1"]:
+    st.session_state["frozen_c14_1"] = raw_c14_1[:10]
+    st.session_state["frozen_c14_2"] = raw_c14_2[:10]
+    st.session_state["frozen_c14_3"] = raw_c14_3[:10]
 
-  col_lock14, _ = st.columns([2, 4])
-  with col_lock14:
-    if not st.session_state["locked_14"]:
-      if st.button("🔒 Zamroź zestawy 14:00", key="btn_lock_14", use_container_width=True):
-        st.session_state["locked_14"] = True
-        st.rerun()
-    else:
-      if st.button("🔓 Odblokuj / Zmień zestawy 14:00", key="btn_unlock_14", use_container_width=True):
-        st.session_state["locked_14"] = False
-        st.rerun()
-
+  col_14_s1, col_14_c1 = st.columns([1, 3])
+  with col_14_s1:
+    sz_14_1 = st.slider("Zestaw 1 (1-10):", 1, 10, key="sz_14_1", on_change=save_persistent_state)
+  c_14_1 = sorted(st.session_state["frozen_c14_1"][:sz_14_1], key=lambda x: int(x))
   hits_c14_1 = sum(1 for n in c_14_1 if n in latest_nums_14) if show_ticks_coupon_14 else 0
-  hits_c14_2 = sum(1 for n in c_14_2 if n in latest_nums_14) if show_ticks_coupon_14 else 0
-  hits_c14_3 = sum(1 for n in c_14_3 if n in latest_nums_14) if show_ticks_coupon_14 else 0
-
   with col_14_c1:
     st.markdown(
         f"**Zestaw 1 (Główny Top)** ({len(c_14_1)} liczb)"
@@ -853,18 +942,48 @@ if df is not None and not df.empty:
         f" {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_14_1, latest_nums_14, show_ticks_coupon_14), language=None)
+
+  col_14_s2, col_14_c2 = st.columns([1, 3])
+  with col_14_s2:
+    sz_14_2 = st.slider("Zestaw 2 (1-10):", 1, 10, key="sz_14_2", on_change=save_persistent_state)
+  c_14_2 = sorted(st.session_state["frozen_c14_2"][:sz_14_2], key=lambda x: int(x))
+  hits_c14_2 = sum(1 for n in c_14_2 if n in latest_nums_14) if show_ticks_coupon_14 else 0
   with col_14_c2:
     st.markdown(
         f"**Zestaw 2 (Przesunięty Top)** ({len(c_14_2)} liczb)"
         f" {f'*(Trafienia: {hits_c14_2}/{len(c_14_2)})*' if show_ticks_coupon_14 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_14_2, latest_nums_14, show_ticks_coupon_14), language=None)
+
+  col_14_s3, col_14_c3 = st.columns([1, 3])
+  with col_14_s3:
+    sz_14_3 = st.slider("Zestaw 3 (1-10):", 1, 10, key="sz_14_3", on_change=save_persistent_state)
+  c_14_3 = sorted(st.session_state["frozen_c14_3"][:sz_14_3], key=lambda x: int(x))
+  hits_c14_3 = sum(1 for n in c_14_3 if n in latest_nums_14) if show_ticks_coupon_14 else 0
   with col_14_c3:
     st.markdown(
         f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_14_3)} liczb)"
         f" {f'*(Trafienia: {hits_c14_3}/{len(c_14_3)})*' if show_ticks_coupon_14 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_14'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_14_3, latest_nums_14, show_ticks_coupon_14), language=None)
+
+  col_lock14, _ = st.columns([2, 4])
+  with col_lock14:
+    if not st.session_state["locked_14"]:
+      if st.button("🔒 Zamroź zestawy 14:00 (na stałe)", key="btn_lock_14", use_container_width=True):
+        st.session_state["locked_14"] = True
+        st.session_state["frozen_c14_1"] = raw_c14_1[:10]
+        st.session_state["frozen_c14_2"] = raw_c14_2[:10]
+        st.session_state["frozen_c14_3"] = raw_c14_3[:10]
+        save_persistent_state()
+        st.rerun()
+    else:
+      if st.button("🔓 Odblokuj / Zmień zestawy 14:00", key="btn_unlock_14", use_container_width=True):
+        st.session_state["locked_14"] = False
+        save_persistent_state()
+        st.rerun()
 
   st.divider()
 
@@ -956,48 +1075,27 @@ if df is not None and not df.empty:
     ])
     st.caption(f"💤 **Najdłużej nieobecne w sesji 22:00 (Śpiochy):** {sl22_str}")
 
+  # --- ZESTAWY 22:00 (Z TRWAŁYM ZAMRAŻANIEM DO PLIKU + URL) ---
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 22:00):**")
-  col_22_s1, col_22_c1 = st.columns([1, 3])
-  with col_22_s1:
-    sz_22_1 = st.slider("Zestaw 1 (1-10):", 1, 10, 8, key="sz_22_1")
-  col_22_s2, col_22_c2 = st.columns([1, 3])
-  with col_22_s2:
-    sz_22_2 = st.slider("Zestaw 2 (1-10):", 1, 10, 8, key="sz_22_2")
-  col_22_s3, col_22_c3 = st.columns([1, 3])
-  with col_22_s3:
-    sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, 8, key="sz_22_3")
 
   raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
       "22:00",
-      max(sz_22_1, sz_22_2, sz_22_3),
+      10,
       zakres_22,
       prioritize_top_endings,
       tuple(missing_22),
       parity_bias,
   )
-  if not st.session_state["locked_22"]:
-    st.session_state["frozen_c22_1"] = raw_c22_1[:sz_22_1]
-    st.session_state["frozen_c22_2"] = raw_c22_2[:sz_22_2]
-    st.session_state["frozen_c22_3"] = raw_c22_3[:sz_22_3]
-  c_22_1 = st.session_state["frozen_c22_1"][:sz_22_1]
-  c_22_2 = st.session_state["frozen_c22_2"][:sz_22_2]
-  c_22_3 = st.session_state["frozen_c22_3"][:sz_22_3]
+  if not st.session_state["locked_22"] or not st.session_state["frozen_c22_1"]:
+    st.session_state["frozen_c22_1"] = raw_c22_1[:10]
+    st.session_state["frozen_c22_2"] = raw_c22_2[:10]
+    st.session_state["frozen_c22_3"] = raw_c22_3[:10]
 
-  col_lock22, _ = st.columns([2, 4])
-  with col_lock22:
-    if not st.session_state["locked_22"]:
-      if st.button("🔒 Zamroź zestawy 22:00", key="btn_lock_22", use_container_width=True):
-        st.session_state["locked_22"] = True
-        st.rerun()
-    else:
-      if st.button("🔓 Odblokuj / Zmień zestawy 22:00", key="btn_unlock_22", use_container_width=True):
-        st.session_state["locked_22"] = False
-        st.rerun()
-
+  col_22_s1, col_22_c1 = st.columns([1, 3])
+  with col_22_s1:
+    sz_22_1 = st.slider("Zestaw 1 (1-10):", 1, 10, key="sz_22_1", on_change=save_persistent_state)
+  c_22_1 = sorted(st.session_state["frozen_c22_1"][:sz_22_1], key=lambda x: int(x))
   hits_c22_1 = sum(1 for n in c_22_1 if n in latest_nums_22) if show_ticks_coupon_22 else 0
-  hits_c22_2 = sum(1 for n in c_22_2 if n in latest_nums_22) if show_ticks_coupon_22 else 0
-  hits_c22_3 = sum(1 for n in c_22_3 if n in latest_nums_22) if show_ticks_coupon_22 else 0
-
   with col_22_c1:
     st.markdown(
         f"**Zestaw 1 (Główny Top)** ({len(c_22_1)} liczb)"
@@ -1005,18 +1103,48 @@ if df is not None and not df.empty:
         f" {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_22_1, latest_nums_22, show_ticks_coupon_22), language=None)
+
+  col_22_s2, col_22_c2 = st.columns([1, 3])
+  with col_22_s2:
+    sz_22_2 = st.slider("Zestaw 2 (1-10):", 1, 10, key="sz_22_2", on_change=save_persistent_state)
+  c_22_2 = sorted(st.session_state["frozen_c22_2"][:sz_22_2], key=lambda x: int(x))
+  hits_c22_2 = sum(1 for n in c_22_2 if n in latest_nums_22) if show_ticks_coupon_22 else 0
   with col_22_c2:
     st.markdown(
         f"**Zestaw 2 (Przesunięty Top)** ({len(c_22_2)} liczb)"
         f" {f'*(Trafienia: {hits_c22_2}/{len(c_22_2)})*' if show_ticks_coupon_22 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_22_2, latest_nums_22, show_ticks_coupon_22), language=None)
+
+  col_22_s3, col_22_c3 = st.columns([1, 3])
+  with col_22_s3:
+    sz_22_3 = st.slider("Zestaw 3 (1-10):", 1, 10, key="sz_22_3", on_change=save_persistent_state)
+  c_22_3 = sorted(st.session_state["frozen_c22_3"][:sz_22_3], key=lambda x: int(x))
+  hits_c22_3 = sum(1 for n in c_22_3 if n in latest_nums_22) if show_ticks_coupon_22 else 0
   with col_22_c3:
     st.markdown(
         f"**Zestaw 3 (Strategia Alternatywna)** ({len(c_22_3)} liczb)"
         f" {f'*(Trafienia: {hits_c22_3}/{len(c_22_3)})*' if show_ticks_coupon_22 else ''}"
+        f" {'🔒 [Zamrożony]' if st.session_state['locked_22'] else '🟢 [Na żywo]'}"
     )
     st.code(format_coupon_list(c_22_3, latest_nums_22, show_ticks_coupon_22), language=None)
+
+  col_lock22, _ = st.columns([2, 4])
+  with col_lock22:
+    if not st.session_state["locked_22"]:
+      if st.button("🔒 Zamroź zestawy 22:00 (na stałe)", key="btn_lock_22", use_container_width=True):
+        st.session_state["locked_22"] = True
+        st.session_state["frozen_c22_1"] = raw_c22_1[:10]
+        st.session_state["frozen_c22_2"] = raw_c22_2[:10]
+        st.session_state["frozen_c22_3"] = raw_c22_3[:10]
+        save_persistent_state()
+        st.rerun()
+    else:
+      if st.button("🔓 Odblokuj / Zmień zestawy 22:00", key="btn_unlock_22", use_container_width=True):
+        st.session_state["locked_22"] = False
+        save_persistent_state()
+        st.rerun()
 
   st.divider()
 
@@ -1241,11 +1369,14 @@ if df is not None and not df.empty:
       "Echa -16 losowań + Topowych Końcówek (5, 3, 7) + Odbić Pustych Końcówek."
   )
 
+  if "fusion_coupon_size" not in st.session_state:
+    st.session_state["fusion_coupon_size"] = 8
+
   fusion_size = st.select_slider(
       "Wybierz liczbę skreśleń na Kuponie Dnia:",
       options=[5, 6, 7, 8, 9, 10],
-      value=8,
       key="fusion_coupon_size",
+      on_change=save_persistent_state,
   )
 
   fusion_scores = defaultdict(float)

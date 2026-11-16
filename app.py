@@ -120,8 +120,53 @@ if "state_initialized" not in st.session_state:
   st.session_state["state_initialized"] = True
 
 
+def read_flexible_csv(source):
+  """Wczytuje CSV niezależnie od separatora (, lub ; lub tabulator), kodowania czy nagłówka."""
+  import io
+  if hasattr(source, "seek"):
+    source.seek(0)
+    raw_bytes = source.read()
+    source.seek(0)
+  else:
+    with open(source, "rb") as f:
+      raw_bytes = f.read()
+
+  text = None
+  for enc in ("utf-8-sig", "utf-8", "cp1250", "latin1"):
+    try:
+      text = raw_bytes.decode(enc)
+      break
+    except Exception:
+      continue
+  if text is None:
+    text = raw_bytes.decode("utf-8", errors="replace")
+
+  lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+  if not lines:
+    return pd.DataFrame()
+
+  first_line = lines[0]
+  sep = ";" if first_line.count(";") > first_line.count(",") else ","
+  if "\t" in first_line and first_line.count("\t") > max(first_line.count(","), first_line.count(";")):
+    sep = "\t"
+
+  df_raw = pd.read_csv(io.StringIO(text), sep=sep, header=None, engine="python")
+  return df_raw
+
+
 def parse_and_clean_df(dfs):
-  df = pd.concat(dfs, ignore_index=True)
+  cleaned_parts = []
+  for d in dfs:
+    if d is None or d.empty:
+      continue
+    temp = d.copy()
+    temp.columns = list(range(temp.shape[1]))
+    cleaned_parts.append(temp)
+
+  if not cleaned_parts:
+    return pd.DataFrame()
+
+  df = pd.concat(cleaned_parts, ignore_index=True)
 
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
   while df.shape[1] < len(cols):
@@ -164,6 +209,73 @@ def parse_and_clean_df(dfs):
   return df
 
 
+def fetch_lotto_api_rows():
+  """Pobiera najnowsze wyniki Multi Multi z otwartego API Lotto i konwertuje na wiersze DataFrame."""
+  endpoints = [
+      "https://www.lotto.pl/api/lotteries/draw-results/by-gametype?game=MultiMulti&index=1&size=30&sort=drawDate&order=DESC",
+      "https://developers.lotto.pl/api/open/v1/lotteries/draw-results/by-gametype?gameType=MultiMulti&index=1&size=30&sort=drawDate&order=DESC",
+      "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=30",
+  ]
+  headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Referer": "https://www.lotto.pl/multi-multi/wyniki-i-wygrane",
+  }
+  rows = []
+  for url in endpoints:
+    try:
+      res = requests.get(url, headers=headers, timeout=5)
+      if res.status_code != 200:
+        continue
+      data = res.json()
+      items = []
+      if isinstance(data, dict):
+        items = data.get("items") or data.get("results") or []
+      elif isinstance(data, list):
+        items = data
+
+      for item in items:
+        if not isinstance(item, dict):
+          continue
+        draw_id = item.get("drawSystemId") or item.get("id")
+        draw_date_raw = str(item.get("drawDate") or item.get("date") or "")
+        results_list = item.get("results") or []
+        nums = []
+        if isinstance(results_list, list) and results_list:
+          first_res = results_list[0]
+          if isinstance(first_res, dict):
+            nums = first_res.get("resultsJson") or first_res.get("numbers") or []
+          elif isinstance(first_res, (int, str)):
+            nums = results_list
+        if not nums:
+          nums = item.get("resultsJson") or item.get("numbers") or []
+
+        if draw_id and len(nums) >= 20:
+          # Parsowanie daty ISO np. 2026-11-16T14:00:00Z
+          date_str = draw_date_raw[:10]
+          hour_str = "14:00"
+          try:
+            if "T" in draw_date_raw:
+              dt_part, tm_part = draw_date_raw.split("T", 1)
+              parts_d = dt_part.split("-")
+              if len(parts_d) == 3:
+                date_str = f"{parts_d[2]}.{parts_d[1]}.{parts_d[0]}"
+              h_val = int(tm_part.split(":")[0])
+              # Uwzględnienie strefy czasowej UTC/CET (13:00 UTC = 14:00 CET, 21:00 UTC = 22:00 CET)
+              hour_str = "14:00" if h_val < 17 else "22:00"
+          except Exception:
+            pass
+          rows.append([str(draw_id), date_str, hour_str] + [int(x) for x in nums[:20]])
+      if rows:
+        break
+    except Exception:
+      continue
+
+  if rows:
+    return pd.DataFrame(rows)
+  return pd.DataFrame()
+
+
 @st.cache_data
 def load_disk_data(file_signatures):
   guaranteed_rows = [
@@ -200,7 +312,7 @@ def load_disk_data(file_signatures):
   csv_files = sorted(glob.glob("*.csv"))
   for fname in csv_files:
     try:
-      temp_df = pd.read_csv(fname, header=None)
+      temp_df = read_flexible_csv(fname)
       if not temp_df.empty:
         dfs.append(temp_df)
     except Exception:
@@ -211,33 +323,24 @@ def load_disk_data(file_signatures):
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-# --- PANEL BOCZNY: WGRYWANIE CSV I SYNCHRONIZACJA ---
+# --- PANEL BOCZNY: WGRYWANIE CSV, RĘCZNE DOPISANIE I SYNCHRONIZACJA ---
 uploaded_csv = st.sidebar.file_uploader(
     "📂 Wgraj nowy plik CSV z wynikami",
-    type=["csv"],
+    type=["csv", "txt"],
     help="Wrzuć najnowszy eksport wyników (np. multi_multi (22).csv), aby natychmiast zaktualizować bazę.",
 )
 
 if st.sidebar.button("🔄 Odśwież i zsynchronizuj z API", use_container_width=True):
-  with st.spinner("Pobieranie najnowszych wyników z sieci..."):
-    try:
-      session = requests.Session()
-      api_url = (
-          "https://www.lotto.pl/api/v1/gametype/results?gameType=MultiMulti&size=50"
+  with st.spinner("Pobieranie najnowszych wyników z Lotto.pl..."):
+    df_api = fetch_lotto_api_rows()
+    if not df_api.empty:
+      st.session_state["api_fetched_df"] = df_api
+      st.sidebar.success(f"✅ Pobrano {len(df_api)} losowań z API Lotto!")
+    else:
+      st.sidebar.warning(
+          "⚠️ Serwer Lotto.pl zablokował automatyczne zapytanie z chmury. "
+          "Użyj opcji wgrania pliku CSV lub szybkiego wpisu poniżej."
       )
-      headers = {
-          "User-Agent": (
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          ),
-          "Accept": "application/json, text/plain, */*",
-      }
-      res = session.get(api_url, headers=headers, timeout=3)
-      if res.status_code == 200:
-        st.sidebar.success("Synchronizacja z API zakończona sukcesem!")
-      else:
-        st.sidebar.warning("Serwer Lotto odpowiedział, ale dane mogą być niedostępne.")
-    except Exception:
-      st.sidebar.error("Brak połączenia z siecią (używasz bazy lokalnej).")
   save_persistent_state()
   st.cache_data.clear()
   st.rerun()
@@ -249,14 +352,63 @@ disk_csv_sigs = tuple(
 )
 df = load_disk_data(disk_csv_sigs)
 
+# Dołączenie danych z API, jeśli zostały pobrane
+if "api_fetched_df" in st.session_state and not st.session_state["api_fetched_df"].empty:
+  df = parse_and_clean_df([df, st.session_state["api_fetched_df"]])
+
+# Dołączenie wgranego pliku CSV (z trwałym zapisem na dysku)
 if uploaded_csv is not None:
   try:
-    df_up = pd.read_csv(uploaded_csv, header=None)
+    df_up = read_flexible_csv(uploaded_csv)
     if not df_up.empty:
       df = parse_and_clean_df([df, df_up])
-      st.sidebar.info(f"📥 Dołączono plik: **{uploaded_csv.name}**")
+      # Zapisz na dysku jako uploaded_latest.csv, aby przetrwało odświeżenie strony
+      try:
+        df_up.to_csv("uploaded_latest.csv", index=False, header=False)
+      except Exception:
+        pass
+      st.sidebar.success(f"📥 Załadowano i zapisano plik: **{uploaded_csv.name}**")
+    else:
+      st.sidebar.error("⚠️ Wgrany plik CSV jest pusty.")
   except Exception as e:
     st.sidebar.error(f"Błąd odczytu wgranego CSV: {e}")
+
+# --- AWARYJNE / SZYBKIE DOPISANIE LOSOWANIA RĘCZNIE ---
+with st.sidebar.expander("✍️ Szybkie dopisanie pojedynczego losowania"):
+  last_known_id = int(df.iloc[-1]["ID"]) if (df is not None and not df.empty and str(df.iloc[-1]["ID"]).isdigit()) else 17149
+  manual_id = st.number_input("Numer losowania (ID):", min_value=1, value=last_known_id + 1, step=1)
+  manual_date = st.text_input("Data (DD.MM.RRRR):", value=datetime.date.today().strftime("%d.%m.%Y"))
+  manual_hour = st.selectbox("Godzina:", ["14:00", "22:00"])
+  manual_nums_str = st.text_input("20 wylosowanych liczb (oddzielone spacją lub przecinkiem):", placeholder="np. 03 11 15 22 ...")
+  if st.button("➕ Dodaj losowanie do bazy", use_container_width=True):
+    raw_tokens = [t.strip() for t in manual_nums_str.replace(",", " ").replace(";", " ").split() if t.strip().isdigit()]
+    nums_int = [int(t) for t in raw_tokens if 1 <= int(t) <= 80]
+    # Zachowaj unikalne 20 liczb w kolejności wpisania
+    unique_20 = []
+    for n in nums_int:
+      if n not in unique_20:
+        unique_20.append(n)
+    if len(unique_20) == 20:
+      new_row_df = pd.DataFrame([[str(int(manual_id)), manual_date.strip(), manual_hour] + unique_20])
+      try:
+        if os.path.exists("manual_draws.csv"):
+          old_m = read_flexible_csv("manual_draws.csv")
+          combined_m = pd.concat([old_m, new_row_df], ignore_index=True)
+        else:
+          combined_m = new_row_df
+        combined_m.to_csv("manual_draws.csv", index=False, header=False)
+      except Exception:
+        pass
+      if "manual_rows_list" not in st.session_state:
+        st.session_state["manual_rows_list"] = []
+      st.session_state["manual_rows_list"].append(new_row_df)
+      st.cache_data.clear()
+      st.rerun()
+    else:
+      st.error(f"Wpisano {len(unique_20)} unikalnych liczb z zakresu 1–80. Wymagane jest dokładnie 20 liczb!")
+
+if "manual_rows_list" in st.session_state and st.session_state["manual_rows_list"]:
+  df = parse_and_clean_df([df] + st.session_state["manual_rows_list"])
 
 if df is not None and not df.empty:
   latest_entry = df.iloc[-1]

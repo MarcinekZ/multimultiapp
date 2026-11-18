@@ -1652,7 +1652,83 @@ if df is not None and not df.empty:
     elif parity_bias == "ODD" and (n_i % 2 != 0) and fusion_reasons[n_s]:
       fusion_scores[n_s] += 0.8
 
-  top_fusion = sorted(fusion_scores.items(), key=lambda x: (-x[1], int(x[0])))[:fusion_size]
+  # --- SYNERGIA PAR I TRÓJEK W KUPONIE DNIA ---
+  df_target_synergy = (df_22_all if next_session_label == "22:00" else df_14_all).tail(
+      int(zakres_22 if next_session_label == "22:00" else zakres_14)
+  )
+  pair_counter = Counter()
+  for _, s_row in df_target_synergy.iterrows():
+    s_nums = sorted(list(set(f"{int(v):02d}" for v in get_row_numbers(s_row))), key=lambda x: int(x))
+    for comb in combinations(s_nums, 2):
+      pair_counter[comb] += 1
+
+  top_synergy_pairs = [p for p, _ in pair_counter.most_common(12)]
+  preliminary_top = {k for k, _ in sorted(fusion_scores.items(), key=lambda x: (-x[1], int(x[0])))[:18]}
+  for p_a, p_b in top_synergy_pairs:
+    if p_a in preliminary_top and p_b in preliminary_top:
+      fusion_scores[p_a] += 1.1
+      fusion_scores[p_b] += 1.1
+      if "Synergia Par" not in fusion_reasons[p_a]:
+        fusion_reasons[p_a].append("Synergia Par")
+      if "Synergia Par" not in fusion_reasons[p_b]:
+        fusion_reasons[p_b].append("Synergia Par")
+
+  # --- KONTROLA POWTÓREK (ANTI-REPEAT CAP) I BALANS PARZYSTOŚCI / ZAKRESU ---
+  ranked_candidates = sorted(fusion_scores.items(), key=lambda x: (-x[1], int(x[0])))
+  last_draw_str_set = {f"{n:02d}" for n in latest_overall_nums_int}
+  max_repeats_allowed = max(2, fusion_size // 3)
+  max_per_parity = (fusion_size + 1) // 2 + 1
+  max_per_half = (fusion_size + 1) // 2 + 1
+
+  selected_fusion = []
+  rep_cnt = 0
+  even_cnt = 0
+  odd_cnt = 0
+  low_cnt = 0
+  high_cnt = 0
+
+  for cand_str, cand_score in ranked_candidates:
+    if len(selected_fusion) >= fusion_size:
+      break
+    c_int = int(cand_str)
+    is_rep = cand_str in last_draw_str_set
+    is_even = (c_int % 2 == 0)
+    is_low = (c_int <= 40)
+
+    if is_rep and rep_cnt >= max_repeats_allowed:
+      continue
+    if is_even and even_cnt >= max_per_parity:
+      continue
+    if (not is_even) and odd_cnt >= max_per_parity:
+      continue
+    if is_low and low_cnt >= max_per_half:
+      continue
+    if (not is_low) and high_cnt >= max_per_half:
+      continue
+
+    selected_fusion.append((cand_str, cand_score))
+    if is_rep:
+      rep_cnt += 1
+    if is_even:
+      even_cnt += 1
+    else:
+      odd_cnt += 1
+    if is_low:
+      low_cnt += 1
+    else:
+      high_cnt += 1
+
+  # Uzupełnienie gdyby ostre filtry zostawiły mniej niż fusion_size liczb
+  if len(selected_fusion) < fusion_size:
+    chosen_set = {x[0] for x in selected_fusion}
+    for cand_str, cand_score in ranked_candidates:
+      if cand_str not in chosen_set:
+        selected_fusion.append((cand_str, cand_score))
+        chosen_set.add(cand_str)
+        if len(selected_fusion) >= fusion_size:
+          break
+
+  top_fusion = selected_fusion
   fusion_nums_sorted = sorted([item[0] for item in top_fusion], key=lambda x: int(x))
 
   st.success(

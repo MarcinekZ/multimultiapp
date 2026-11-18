@@ -168,11 +168,38 @@ def parse_and_clean_df(dfs):
 
   df = pd.concat(cleaned_parts, ignore_index=True)
 
+  # Dynamiczne wyciąganie dokładnie 20 unikalnych liczb z zakresu 1..80 dla każdego wiersza
+  # (eliminuje błąd 19 liczb przy przesuniętych kolumnach lub kolumnie Plus w CSV)
+  normalized_rows = []
+  for _, raw_r in df.iterrows():
+    r_id = str(raw_r.iloc[0]).replace(".0", "").strip() if len(raw_r) > 0 and pd.notna(raw_r.iloc[0]) else ""
+    if not r_id.isdigit():
+      continue
+    r_date = str(raw_r.iloc[1]).strip() if len(raw_r) > 1 and pd.notna(raw_r.iloc[1]) else ""
+    r_hour = str(raw_r.iloc[2]).strip() if len(raw_r) > 2 and pd.notna(raw_r.iloc[2]) else "14:00"
+    row_nums = []
+    for c_idx in range(3, len(raw_r)):
+      val = raw_r.iloc[c_idx]
+      if pd.notna(val) and str(val).strip():
+        v_clean = str(val).replace(".0", "").strip()
+        if v_clean.isdigit():
+          v_int = int(v_clean)
+          if 1 <= v_int <= 80 and v_int not in row_nums:
+            row_nums.append(v_int)
+            if len(row_nums) == 20:
+              break
+    while len(row_nums) < 20:
+      row_nums.append(None)
+    normalized_rows.append([r_id, r_date, r_hour] + row_nums[:20])
+
   cols = ["ID", "Data", "Godzina"] + [f"L{i}" for i in range(1, 21)]
-  while df.shape[1] < len(cols):
-    df[df.shape[1]] = None
-  df = df.iloc[:, : len(cols)]
-  df.columns = cols
+  if normalized_rows:
+    df = pd.DataFrame(normalized_rows, columns=cols)
+  else:
+    while df.shape[1] < len(cols):
+      df[df.shape[1]] = None
+    df = df.iloc[:, : len(cols)]
+    df.columns = cols
 
   if "ID" in df.columns:
     df["ID"] = (
@@ -238,7 +265,6 @@ def fetch_lotto_api_rows():
       "Origin": "https://www.lotto.pl",
   }
 
-  # Rozgrzanie sesji ciasteczkami strony głównej Lotto (pomaga ominąć podstawową weryfikację sesji)
   try:
     session.get("https://www.lotto.pl/multi-multi/wyniki-i-wygrane", headers=headers, timeout=4)
   except Exception:
@@ -310,7 +336,6 @@ def fetch_lotto_api_rows():
     except Exception:
       continue
 
-  # Zapasowe źródło: otwarte archiwum tekstowe/CSV Multi Multi (mbnet / multipasko), gdy główne API Lotto blokuje IP chmury
   if not rows:
     fallback_urls = [
         "http://www.mbnet.com.pl/ml.txt",
@@ -322,20 +347,17 @@ def fetch_lotto_api_rows():
         if r_fb.status_code == 200 and len(r_fb.text) > 500:
           lines_fb = [ln.strip() for ln in r_fb.text.splitlines() if ln.strip()][-40:]
           for ln in lines_fb:
-            # Format mbnet: 17149. 15.11.2026 04,08,09,...
             m = re.match(r"^(\d+)\.\s*(\d{2}\.\d{2}\.\d{4})\s+([\d,]+)", ln)
             if m:
               d_id = m.group(1)
               d_dt = m.group(2)
               d_nums = [int(x) for x in m.group(3).split(",") if x.strip().isdigit() and 1 <= int(x) <= 80]
               if len(d_nums) >= 20 and d_id not in seen_ids:
-                # W Multi Multi losowania nieparzyste/parzyste lub wg kolejności tego samego dnia
                 same_day_count = sum(1 for r in rows if r[1] == d_dt)
                 h_str = "14:00" if same_day_count == 0 else "22:00"
                 seen_ids.add(d_id)
                 rows.append([d_id, d_dt, h_str] + d_nums[:20])
           if rows:
-            # Korekta godziny dla ostatniego dnia, jeśli w danym dniu było tylko 1 losowanie lub na podstawie parzystości ID względem bazy
             break
       except Exception:
         continue
@@ -392,7 +414,6 @@ def load_disk_data(file_signatures):
 
 st.title("📱 Mobilny Panel Analityczny Ekipy")
 
-# --- PANEL BOCZNY: WGRYWANIE CSV, RĘCZNE DOPISANIE I SYNCHRONIZACJA ---
 uploaded_csv = st.sidebar.file_uploader(
     "📂 Wgraj nowy plik CSV z wynikami",
     type=["csv", "txt"],
@@ -438,17 +459,14 @@ disk_csv_sigs = tuple(
 )
 df = load_disk_data(disk_csv_sigs)
 
-# Dołączenie danych z API, jeśli zostały pobrane
 if "api_fetched_df" in st.session_state and not st.session_state["api_fetched_df"].empty:
   df = parse_and_clean_df([df, st.session_state["api_fetched_df"]])
 
-# Dołączenie wgranego pliku CSV (z trwałym zapisem na dysku)
 if uploaded_csv is not None:
   try:
     df_up = read_flexible_csv(uploaded_csv)
     if not df_up.empty:
       df = parse_and_clean_df([df, df_up])
-      # Zapisz na dysku jako uploaded_latest.csv, aby przetrwało odświeżenie strony
       try:
         df_up.to_csv("uploaded_latest.csv", index=False, header=False)
       except Exception:
@@ -459,7 +477,6 @@ if uploaded_csv is not None:
   except Exception as e:
     st.sidebar.error(f"Błąd odczytu wgranego CSV: {e}")
 
-# --- AWARYJNE / SZYBKIE DOPISANIE LOSOWANIA RĘCZNIE ---
 with st.sidebar.expander("✍️ Szybkie dopisanie pojedynczego losowania"):
   last_known_id = int(df.iloc[-1]["ID"]) if (df is not None and not df.empty and str(df.iloc[-1]["ID"]).isdigit()) else 17149
   manual_id = st.number_input("Numer losowania (ID):", min_value=1, value=last_known_id + 1, step=1)
@@ -469,7 +486,6 @@ with st.sidebar.expander("✍️ Szybkie dopisanie pojedynczego losowania"):
   if st.button("➕ Dodaj losowanie do bazy", use_container_width=True):
     raw_tokens = [t.strip() for t in manual_nums_str.replace(",", " ").replace(";", " ").split() if t.strip().isdigit()]
     nums_int = [int(t) for t in raw_tokens if 1 <= int(t) <= 80]
-    # Zachowaj unikalne 20 liczb w kolejności wpisania
     unique_20 = []
     for n in nums_int:
       if n not in unique_20:
@@ -512,13 +528,24 @@ if df is not None and not df.empty:
         cleaned_v = str(val).replace(".0", "").strip()
         if cleaned_v and cleaned_v.isdigit():
           n_int = int(cleaned_v)
-          if 1 <= n_int <= 80:
+          if 1 <= n_int <= 80 and str(n_int) not in nums:
             nums.append(str(n_int))
-    return nums
+    if len(nums) < 20:
+      for col in row.index:
+        if str(col) not in ("ID", "Data", "Godzina"):
+          val = row.get(col)
+          if pd.notna(val) and str(val).strip():
+            cleaned_v = str(val).replace(".0", "").strip()
+            if cleaned_v and cleaned_v.isdigit():
+              n_int = int(cleaned_v)
+              if 1 <= n_int <= 80 and str(n_int) not in nums:
+                nums.append(str(n_int))
+                if len(nums) == 20:
+                  break
+    return nums[:20]
 
-  # --- STAŁE STATYSTYCZNE Z ANALIZY PEŁNEJ BAZY ---
-  TOP_ENDINGS = {5, 3, 7}        # Najczęstsze końcówki ogółem (>35 700 trafień)
-  JUMPER_ENDINGS = {3, 8, 9, 5}  # Końcówki najczęściej powtarzających się skoczków
+  TOP_ENDINGS = {5, 3, 7}
+  JUMPER_ENDINGS = {3, 8, 9, 5}
 
   CLUSTER_PARTNERS = {
       5: ["35", "65", "05"],
@@ -550,7 +577,6 @@ if df is not None and not df.empty:
   total_14 = len(df_14_all)
   total_22 = len(df_22_all)
 
-  # --- 1. ARCHIWUM OSTATNICH LOSOWAŃ ---
   st.subheader("📌 Archiwum: Ostatnie Losowania (Przeskoki)")
   st.caption("Liczby oznaczone 🔄 powtórzyły się z poprzedniego losowania.")
 
@@ -587,7 +613,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 2. RADAR KOŃCÓWEK, PUSTYCH KOŃCÓWEK (91.23%) ORAZ ANOMALII PARZYSTOŚCI ---
   st.subheader("🧲 Radar Końcówek, Pustych Końcówek i Anomalii")
 
   latest_overall = df.iloc[-1]
@@ -658,7 +683,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- 3. TRZY NIEZALEŻNE SUWAKI (WSPÓLNY + SESJA 14:00 + SESJA 22:00) ---
   st.subheader("⚙️ Ustawienia Analizy Statystycznej (3 Niezależne Suwaki)")
 
   def render_independent_slider(label, state_key, max_val, default_val, btn_prefix):
@@ -746,7 +770,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # --- FUNKCJE POMOCNICZE DLA SESJI I PREDYKCJI ---
   latest_nums_14 = set()
   last_id_14 = ""
   last_date_14 = ""
@@ -804,18 +827,22 @@ if df is not None and not df.empty:
     df_session = df_s.tail(int(session_zakres))
     if df_session.empty:
       return [], []
-    all_session_nums = []
-    for _, row in df_session.iterrows():
+    
+    # Time-decay weighting implementation
+    weighted_scores = defaultdict(float)
+    total_len = len(df_session)
+    for idx, (_, row) in enumerate(df_session.iterrows()):
+      weight = 1.0 + (idx / max(1, total_len - 1)) * 1.0  # Waga od 1.0 do 2.0 dla najświeższych
       for val in get_row_numbers(row):
-        all_session_nums.append(f"{int(val):02d}")
+        weighted_scores[f"{int(val):02d}"] += weight
 
-    counts = pd.Series(all_session_nums).value_counts()
-    even_counts = counts[counts.index.map(lambda x: int(x) % 2 == 0)]
-    odd_counts = counts[counts.index.map(lambda x: int(x) % 2 != 0)]
+    even_scores = {k: v for k, v in weighted_scores.items() if int(k) % 2 == 0}
+    odd_scores = {k: v for k, v in weighted_scores.items() if int(k) % 2 != 0}
 
-    even_sorted = sorted(even_counts.head(15).index.tolist(), key=lambda x: int(x))
-    odd_sorted = sorted(odd_counts.head(15).index.tolist(), key=lambda x: int(x))
-    return even_sorted, odd_sorted
+    even_sorted = sorted(even_scores.keys(), key=lambda x: (-even_scores[x], int(x)))[:15]
+    odd_sorted = sorted(odd_scores.keys(), key=lambda x: (-odd_scores[x], int(x)))[:15]
+    
+    return sorted(even_sorted, key=lambda x: int(x)), sorted(odd_sorted, key=lambda x: int(x))
 
   def get_session_top_jumpers_by_slider(session_zakres, session_time, top_n=15):
     df_s = df_14_all if session_time == "14:00" else df_22_all
@@ -823,11 +850,13 @@ if df is not None and not df.empty:
     if len(sub) < 2:
       return []
     counter = Counter()
-    for i in range(1, len(sub)):
+    total_sub = len(sub)
+    for i in range(1, total_sub):
       prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
       curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
+      time_factor = 1.0 + (i / total_sub) * 0.5
       for n in prev_nums.intersection(curr_nums):
-        weight = 1.15 if (n % 10) in JUMPER_ENDINGS else 1.0
+        weight = (1.15 if (n % 10) in JUMPER_ENDINGS else 1.0) * time_factor
         counter[n] += weight
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
     return sorted(top_j, key=lambda x: int(x))
@@ -855,11 +884,13 @@ if df is not None and not df.empty:
     if len(sub) < 2:
       return []
     counter = Counter()
-    for i in range(1, len(sub)):
+    total_sub = len(sub)
+    for i in range(1, total_sub):
       prev_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
       curr_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
+      time_factor = 1.0 + (i / total_sub) * 0.5
       for n in prev_nums.intersection(curr_nums):
-        weight = 1.2 if (n % 10) in JUMPER_ENDINGS else 1.0
+        weight = (1.2 if (n % 10) in JUMPER_ENDINGS else 1.0) * time_factor
         counter[n] += weight
     top_j = [f"{n:02d}" for n, _ in counter.most_common(top_n)]
     return sorted(top_j, key=lambda x: int(x))
@@ -881,7 +912,8 @@ if df is not None and not df.empty:
     mapping_sources = {}
 
     jumper_source_counter = defaultdict(Counter)
-    for i in range(1, len(sub_df)):
+    total_sub = len(sub_df)
+    for i in range(1, total_sub):
       p_nums = {int(v) for v in get_row_numbers(sub_df.iloc[i - 1])}
       c_nums = {int(v) for v in get_row_numbers(sub_df.iloc[i])}
       jumpers = p_nums.intersection(c_nums)
@@ -890,17 +922,18 @@ if df is not None and not df.empty:
           if p != j:
             jumper_source_counter[j][p] += 1
 
-    for i in range(1, len(sub_df)):
+    for i in range(1, total_sub):
       prev_nums = {int(v) for v in get_row_numbers(sub_df.iloc[i - 1])}
       curr_nums = {int(v) for v in get_row_numbers(sub_df.iloc[i])}
       jumpers = prev_nums.intersection(curr_nums)
+      time_weight = 1.0 + (i / total_sub) * 0.6
 
       active_overlap = prev_nums.intersection(base_nums_set)
       if active_overlap:
         for j in jumpers:
           j_str = f"{j:02d}"
           if not candidate_list or j_str in candidate_list:
-            score = float(len(active_overlap))
+            score = float(len(active_overlap)) * time_weight
             if (j % 10) in TOP_ENDINGS:
               score *= 3.5
             if (j % 10) in JUMPER_ENDINGS:
@@ -975,15 +1008,15 @@ if df is not None and not df.empty:
     if df_session.empty:
       return fallback, fallback, fallback
 
-    all_session_nums = []
-    for _, row in df_session.iterrows():
+    weighted_counts = defaultdict(float)
+    total_sub = len(df_session)
+    for idx, (_, row) in enumerate(df_session.iterrows()):
+      w = 1.0 + (idx / max(1, total_sub - 1)) * 1.0
       for val in get_row_numbers(row):
-        all_session_nums.append(f"{int(val):02d}")
-
-    counts = pd.Series(all_session_nums).value_counts()
+        weighted_counts[f"{int(val):02d}"] += w
 
     def score_num(n_str):
-      base_cnt = float(counts.get(n_str, 0))
+      base_cnt = float(weighted_counts.get(n_str, 0))
       if not use_endings_boost:
         return base_cnt
       n_i = int(n_str)
@@ -1000,7 +1033,7 @@ if df is not None and not df.empty:
       return base_cnt * mult
 
     top_freq = sorted(
-        counts.index.tolist(), key=lambda x: score_num(x), reverse=True
+        weighted_counts.keys(), key=lambda x: score_num(x), reverse=True
     )
 
     set1, set2, set3 = [], [], []
@@ -1023,10 +1056,8 @@ if df is not None and not df.empty:
       if len(set3) < limit and s_num not in set3:
         set3.append(s_num)
 
-    # Nie sortujemy przed zwróceniem, aby zachować kolejność rankingu przy skracaniu do 1..10!
     return set1[:limit], set2[:limit], set3[:limit]
 
-  # --- DOMYŚLNE WARTOŚCI STANU ZAMROŻENIA (JEŚLI NIE BYŁO W PLIKU/URL) ---
   for key_name, default_val in [
       ("locked_14", False),
       ("frozen_c14_1", []),
@@ -1046,7 +1077,6 @@ if df is not None and not df.empty:
     if key_name not in st.session_state:
       st.session_state[key_name] = default_val
 
-  # Obliczenia dla 14:00 i 22:00 z ich własnych suwaków
   even_14, odd_14 = get_session_top15_by_session_slider(zakres_14, "14:00")
   even_22, odd_22 = get_session_top15_by_session_slider(zakres_22, "22:00")
 
@@ -1064,9 +1094,6 @@ if df is not None and not df.empty:
   if len(df_22_all) >= 2:
     prev_nums_22 = {int(v) for v in get_row_numbers(df_22_all.iloc[-2])}
 
-  # =========================================================================
-  # 4. GODZINA 14:00 (STATYSTYKI + DEDYKOWANA PREDYKCJA 14:00 ➔ 14:00)
-  # =========================================================================
   st.subheader(f"☀️ Godzina 14:00 (Zakres suwaka: {zakres_14} losowań 14:00)")
 
   sub_14_df = df_14_all.tail(int(zakres_14)).reset_index(drop=True)
@@ -1116,7 +1143,6 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # --- DEDYKOWANA PREDYKCJA WEWNĄTRZSESYJNA 14:00 ➔ 14:00 (TOP 9) ---
   missing_14 = sorted(list(set(range(10)) - {n % 10 for n in latest_nums_14_int}))
   pred_14_to_14, map_14_to_14 = compute_transition_predictions(
       sub_14_df,
@@ -1143,7 +1169,6 @@ if df is not None and not df.empty:
       ]
       st.caption("📌 Źródła 14:00 ➔ 14:00: " + " | ".join(m14_parts))
 
-  # --- ŚPIOCHY 14:00 ---
   sleepers_14 = get_sleeping_numbers(df_14_all, 8)
   if sleepers_14:
     sl14_str = " | ".join([
@@ -1152,7 +1177,6 @@ if df is not None and not df.empty:
     ])
     st.caption(f"💤 **Najdłużej nieobecne w sesji 14:00 (Śpiochy):** {sl14_str}")
 
-  # --- ZESTAWY 14:00 (Z TRWAŁYM ZAMRAŻANIEM DO PLIKU + URL) ---
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 14:00):**")
 
   raw_c14_1, raw_c14_2, raw_c14_3 = get_distinct_coupons(
@@ -1225,9 +1249,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # =========================================================================
-  # 5. GODZINA 22:00 (STATYSTYKI + DEDYKOWANA PREDYKCJA 22:00 ➔ 22:00)
-  # =========================================================================
   st.subheader(f"🌙 Godzina 22:00 (Zakres suwaka: {zakres_22} losowań 22:00)")
 
   sub_22_df = df_22_all.tail(int(zakres_22)).reset_index(drop=True)
@@ -1277,7 +1298,6 @@ if df is not None and not df.empty:
       language=None,
   )
 
-  # --- DEDYKOWANA PREDYKCJA WEWNĄTRZSESYJNA 22:00 ➔ 22:00 (TOP 9) ---
   missing_22 = sorted(list(set(range(10)) - {n % 10 for n in latest_nums_22_int}))
   pred_22_to_22, map_22_to_22 = compute_transition_predictions(
       sub_22_df,
@@ -1304,7 +1324,6 @@ if df is not None and not df.empty:
       ]
       st.caption("📌 Źródła 22:00 ➔ 22:00: " + " | ".join(m22_parts))
 
-  # --- ŚPIOCHY 22:00 ---
   sleepers_22 = get_sleeping_numbers(df_22_all, 8)
   if sleepers_22:
     sl22_str = " | ".join([
@@ -1313,7 +1332,6 @@ if df is not None and not df.empty:
     ])
     st.caption(f"💤 **Najdłużej nieobecne w sesji 22:00 (Śpiochy):** {sl22_str}")
 
-  # --- ZESTAWY 22:00 (Z TRWAŁYM ZAMRAŻANIEM DO PLIKU + URL) ---
   st.markdown("🎯 **3 Niezależne Zestawy (Sesja 22:00):**")
 
   raw_c22_1, raw_c22_2, raw_c22_3 = get_distinct_coupons(
@@ -1386,9 +1404,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # =========================================================================
-  # 6. AKTYWNA PREDYKCJA MIĘDZYSESYJNA, ECHO -16 ORAZ KUPON DNIA (FUZJA)
-  # =========================================================================
   st.subheader(f"🔥 Aktywna Predykcja Międzysesyjna (Suwak Wspólny: {zakres_wspolny} losowań)")
 
   eval_base_row = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
@@ -1419,11 +1434,13 @@ if df is not None and not df.empty:
     if len(sub) < 2:
       return []
     j_counter = Counter()
-    for i in range(1, len(sub)):
+    total_sub = len(sub)
+    for i in range(1, total_sub):
       p_nums = {int(v) for v in get_row_numbers(sub.iloc[i - 1])}
       c_nums = {int(v) for v in get_row_numbers(sub.iloc[i])}
+      time_factor = 1.0 + (i / total_sub) * 0.5
       for n in p_nums.intersection(c_nums):
-        weight = 1.2 if (n % 10) in JUMPER_ENDINGS else 1.0
+        weight = (1.2 if (n % 10) in JUMPER_ENDINGS else 1.0) * time_factor
         j_counter[n] += weight
     cand_list = sorted([f"{n:02d}" for n, _ in j_counter.most_common(15)], key=lambda x: int(x))
     if len(cand_list) < 15:
@@ -1537,7 +1554,6 @@ if df is not None and not df.empty:
 
   st.markdown("")
 
-  # --- DODATKOWA PODPOWIEDŹ: ECHO SPRZED DOKŁADNIE 16 LOSOWAŃ ---
   st.markdown(f"🔮 **Echo sprzed dokładnie 16 losowań (Podpowiedź na {next_session_label}):**")
   st.caption(
       "Statystyka bazy: odstęp 16 losowań generuje najwyższe zagęszczenie mocnych nawrotów "
@@ -1600,7 +1616,6 @@ if df is not None and not df.empty:
 
   st.markdown("")
 
-  # --- 🏆 KUPON DNIA: FUZJA WSZYSTKICH SYGNAŁÓW ---
   st.markdown(f"### 🏆 Kupon Dnia — Fuzja Wszystkich Sygnałów (na {next_session_label})")
   st.caption(
       "Łączy typy z: Predykcji Międzysesyjnej Top 9 + Predykcji Wewnątrzsesyjnej Top 9 + "
@@ -1652,7 +1667,6 @@ if df is not None and not df.empty:
     elif parity_bias == "ODD" and (n_i % 2 != 0) and fusion_reasons[n_s]:
       fusion_scores[n_s] += 0.8
 
-  # --- SYNERGIA PAR I TRÓJEK W KUPONIE DNIA ---
   df_target_synergy = (df_22_all if next_session_label == "22:00" else df_14_all).tail(
       int(zakres_22 if next_session_label == "22:00" else zakres_14)
   )
@@ -1673,7 +1687,6 @@ if df is not None and not df.empty:
       if "Synergia Par" not in fusion_reasons[p_b]:
         fusion_reasons[p_b].append("Synergia Par")
 
-  # --- KONTROLA POWTÓREK (ANTI-REPEAT CAP) I BALANS PARZYSTOŚCI / ZAKRESU ---
   ranked_candidates = sorted(fusion_scores.items(), key=lambda x: (-x[1], int(x[0])))
   last_draw_str_set = {f"{n:02d}" for n in latest_overall_nums_int}
   max_repeats_allowed = max(2, fusion_size // 3)
@@ -1718,7 +1731,6 @@ if df is not None and not df.empty:
     else:
       high_cnt += 1
 
-  # Uzupełnienie gdyby ostre filtry zostawiły mniej niż fusion_size liczb
   if len(selected_fusion) < fusion_size:
     chosen_set = {x[0] for x in selected_fusion}
     for cand_str, cand_score in ranked_candidates:
@@ -1736,7 +1748,6 @@ if df is not None and not df.empty:
       + "   ".join([f":red[**{n}**]" for n in fusion_nums_sorted])
   )
 
-  # Weryfikacja trafień w Kuponie Dnia zawsze względem absolutnie ostatniego losowania w bazie (#17149)
   session_nums_for_fusion = {f"{n:02d}" for n in latest_overall_nums_int}
   session_last_id = latest_id
   session_last_date = latest_date
@@ -1762,9 +1773,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # =========================================================================
-  # 7. ANALIZA PAR I TRÓJEK (POWIĄZANA Z SUWAKAMI SESYJNYMI)
-  # =========================================================================
   st.subheader("🔗 Analiza Par i Trójek (Współwystępowanie)")
   selected_session_for_tuples = st.selectbox(
       "Wybierz sesję do analizy par/trójek:", ["22:00", "14:00"]
@@ -1814,9 +1822,6 @@ if df is not None and not df.empty:
 
   st.divider()
 
-  # =========================================================================
-  # 8. PEŁNA BAZA WSZYSTKICH LOSOWAŃ
-  # =========================================================================
   st.subheader("📊 Pełna Baza Wszystkich Losowań")
   display_data = []
   df_reversed = df.iloc[::-1]
